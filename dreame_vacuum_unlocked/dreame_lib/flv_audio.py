@@ -42,6 +42,12 @@ DEFAULT_SAMPLE_RATE = 16000
 DEFAULT_CHANNELS = 1
 DEFAULT_AAC_BITRATE = 96000
 
+# Talk-channel priming windows: the vacuum's speaker needs this much on-air
+# audio before it will play, so any clip shorter than _MIN_TALK_SECONDS is
+# padded with leading + trailing silence (see _pad_pcm_for_talk).
+_MIN_TALK_SECONDS = 1.5
+_LEAD_IN_SECONDS = 1.0
+
 
 def _prev_tag_size(tag: bytes) -> bytes:
     return struct.pack(">I", len(tag))
@@ -215,6 +221,30 @@ def decode_any_to_pcm(input_path: str, sample_rate: int = DEFAULT_SAMPLE_RATE,
     return proc.stdout
 
 
+def _pad_pcm_for_talk(pcm: bytes, sample_rate: int = DEFAULT_SAMPLE_RATE) -> bytes:
+    """Pad short clips with LEADING + trailing silence so they survive the
+    device's talk-channel priming.
+
+    The vacuum's speaker needs a small on-air lead-in before it will produce
+    sound on the FLV/AAC talk-back channel. A raw sub-second clip is fully
+    swallowed by that start-up buffer (and/or its tail is cut when the send
+    service closes right after the last frame), so it plays nothing - while a
+    longer or silence-led clip gives the speaker time to start. Confirmed
+    live (2026-08): a 0.8s clip is silent, the same 0.8s with a 1.0s leading
+    silence + 0.5s trailing silence plays.
+
+    Affects only clips SHORTER than `_MIN_TALK_SECONDS` so already-playing
+    longer clips are sent untouched (no added latency)."""
+    samples = len(pcm) // 2
+    duration = samples / sample_rate if sample_rate else 0
+    if duration >= _MIN_TALK_SECONDS:
+        return pcm
+    lead = int(_LEAD_IN_SECONDS * sample_rate * 2)          # silence before
+    tail = int(max(0.0, _MIN_TALK_SECONDS - _LEAD_IN_SECONDS - duration) * sample_rate * 2)
+    silence = b"\x00\x00"  # 16-bit signed little-endian zero
+    return silence * (lead // 2) + pcm + silence * (tail // 2)
+
+
 def build_send_file(input_audio_path: str, output_flv_path: str,
                      sample_rate: int = DEFAULT_SAMPLE_RATE, channels: int = DEFAULT_CHANNELS,
                      bitrate: int = DEFAULT_AAC_BITRATE) -> int:
@@ -222,6 +252,7 @@ def build_send_file(input_audio_path: str, output_flv_path: str,
     ready to hand to pc_client's SEND_AUDIO_FILE env var (which walks it tag
     by tag and feeds each chunk to QcloudSendVoice). Returns packet count."""
     pcm = decode_any_to_pcm(input_audio_path, sample_rate, channels)
+    pcm = _pad_pcm_for_talk(pcm, sample_rate)
     packets = mux_pcm_to_flv_packets(pcm, sample_rate, channels, bitrate)
     with open(output_flv_path, "wb") as f:
         for p in packets:
