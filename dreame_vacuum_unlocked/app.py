@@ -572,11 +572,15 @@ def _prime_talk_channel(proc, did, line_q=None):
         import queue as _queue
         prime_flv = None
         try:
+            import struct as _struct
+            import wave as _wave
             secs = _TALK_PRIME_SECONDS
-            silence = b"\x00\x00" * int(secs * flv_audio.DEFAULT_SAMPLE_RATE)
-            src = f"/tmp/speak_prime_src_{did}"
-            with open(src, "wb") as fh:
-                fh.write(silence)
+            sr = flv_audio.DEFAULT_SAMPLE_RATE
+            n = int(secs * sr)
+            src = f"/tmp/speak_prime_src_{did}.wav"
+            with _wave.open(src, "wb") as w:
+                w.setnchannels(1); w.setsampwidth(2); w.setframerate(sr)
+                w.writeframes(_struct.pack("<%dh" % n, *([0] * n)))
             prime_flv = f"/tmp/speak_prime_{did}.flv"
             flv_audio.build_send_file(src, prime_flv)
             proc.stdin.write(prime_flv + "\n")
@@ -596,7 +600,7 @@ def _prime_talk_channel(proc, did, line_q=None):
             _PRIMED_PROCS.add(proc.pid)
             app.logger.info("primed talk channel (%.1fs silence) on pid=%s", secs, proc.pid)
         finally:
-            for p in (f"/tmp/speak_prime_src_{did}", prime_flv):
+            for p in (f"/tmp/speak_prime_src_{did}.wav", prime_flv):
                 if p:
                     try:
                         os.remove(p)
