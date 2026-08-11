@@ -545,6 +545,67 @@ def _mux_audio_to_flv(audio_bytes, tag):
     return flv_path
 
 
+# How much leading silence to push down a freshly-opened talk channel before
+# any real clip. The vacuum's speaker won't route the send-service to its
+# speaker until it has ~2s of on-air audio, so the first clip on a cold
+# channel (especially a short one) is swallowed by the warm-up and plays
+# nothing. A priming silence FLV queued ahead of every clip fixes that with no
+# per-clip padding. Confirmed live (2026-08): a raw 0.8s clip is silent on a
+# cold channel but plays after a 2s silence lead-in, and long clips are
+# unaffected because they outlast the warm-up themselves.
+_TALK_PRIME_SECONDS = 2.0
+_PRIMED_PROCS: set = set()
+
+
+def _prime_talk_channel(proc, did, line_q=None):
+    """Queue a leading-silence FLV on a just-opened p2p talk stream's stdin so
+    the device's speaker warms up before the first real clip arrives. Idempotent
+    per process (only primes the first time each p2p proc is used for talk).
+
+    Waits for the prime's own "SENT <path> rc=..." line before removing the
+    muxed file (mirroring /speak/send), so the reader has finished with it - an
+    early delete would make send_flv_file's fopen fail.
+    """
+    try:
+        if proc.pid in _PRIMED_PROCS or proc.poll() is not None or not proc.stdin:
+            return
+        import queue as _queue
+        prime_flv = None
+        try:
+            secs = _TALK_PRIME_SECONDS
+            silence = b"\x00\x00" * int(secs * flv_audio.DEFAULT_SAMPLE_RATE)
+            src = f"/tmp/speak_prime_src_{did}"
+            with open(src, "wb") as fh:
+                fh.write(silence)
+            prime_flv = f"/tmp/speak_prime_{did}.flv"
+            flv_audio.build_send_file(src, prime_flv)
+            proc.stdin.write(prime_flv + "\n")
+            proc.stdin.flush()
+            # Don't touch the file until the process confirms it sent the prime.
+            if line_q is not None:
+                deadline = time.time() + max(10.0, secs * 4.0)
+                while time.time() < deadline:
+                    try:
+                        line = line_q.get(timeout=0.5)
+                    except _queue.Empty:
+                        if proc.poll() is not None:
+                            break
+                        continue
+                    if line.startswith("SENT ") and prime_flv in line:
+                        break
+            _PRIMED_PROCS.add(proc.pid)
+            app.logger.info("primed talk channel (%.1fs silence) on pid=%s", secs, proc.pid)
+        finally:
+            for p in (f"/tmp/speak_prime_src_{did}", prime_flv):
+                if p:
+                    try:
+                        os.remove(p)
+                    except OSError:
+                        pass
+    except Exception as err:  # noqa: BLE001 - priming must never fail a send
+        app.logger.warning("talk-channel prime failed (clip still queued): %s", err)
+
+
 @app.route("/speak", methods=["POST"])
 def speak():
     """One-shot: stream audio to the vacuum's speaker over the XP2P
@@ -729,6 +790,14 @@ def speak_start():
             "started_at": time.time(), "line_q": line_q,
             "rtsp_url": rtsp_url, "rtsp_proc": rtsp_proc,
         }
+
+    # Prime the fresh talk channel: the vacuum's speaker needs ~2s of on-air
+    # audio before it will route the send-service to its speaker, so the very
+    # first clip (especially a short one) is otherwise swallowed by the
+    # channel warm-up and plays nothing. Push a leading-silence FLV through
+    # the just-opened stdin now; it is queued ahead of any real /speak/send
+    # clip, so every clip after it plays as-is (no per-clip padding needed).
+    _prime_talk_channel(proc, did, line_q=line_q)
 
     return jsonify({"success": True, "intercom_confirmed": confirmed, "rtsp_url": rtsp_url})
 
@@ -1771,6 +1840,18 @@ def stream_intercom():
         confirmed = _wait_intercom_cloud(protocol, did, session)
     armed = confirmed if on else False
     app.logger.info("stream/intercom %s for %s -> resp=%s confirmed=%s", operation, did, resp, confirmed)
+
+    # Talk rides the same p2p stream session as video+mic, so when intercom is
+    # armed and the speaker is about to become the talk target, prime the
+    # stream's p2p stdin the same way /speak/start does - a short clip sent on
+    # an un-primed stream is otherwise swallowed by the channel warm-up.
+    if armed:
+        with _streams_lock:
+            st = _active_streams.get(did) or {}
+            st_proc = st.get("p2p_proc")
+            st_line_q = st.get("line_q")
+        if st_proc is not None:
+            _prime_talk_channel(st_proc, did, line_q=st_line_q)
 
     # ffmpeg has to be restarted for its RTSP output to pick up the change:
     # RTSP's SDP is negotiated once from ffmpeg's initial probe of live_url,
