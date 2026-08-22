@@ -90,7 +90,12 @@ export default function MapContent() {
     const renderDoc = async (doc: Record<string, any>) => {
       const canvas = canvasRef.current;
       const api = mapApiRef.current;
-      if (!canvas || !api) return;
+      if (!canvas) return;
+      if (!api) {
+        // map.js hasn't loaded yet - retry shortly instead of stalling.
+        timer = setTimeout(tick, 500);
+        return;
+      }
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
       let decoded: any;
@@ -172,7 +177,7 @@ export default function MapContent() {
     <div className={styles.wrap}>
       <header className={styles.header}>
         <h1 className={styles.h1}>Maps</h1>
-        {devices.length > 1 ? (
+        {devices.length > 0 ? (
           <Select
             value={did}
             onChange={setDid}
