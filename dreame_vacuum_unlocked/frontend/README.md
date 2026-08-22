@@ -45,6 +45,14 @@ src/
 - **Data fetching is client-side and RELATIVE.** Pages are client components
   that `fetchJson("api/...")` — relative, no leading slash — so links/API calls
   resolve correctly under HA ingress's path prefix. Do not hard-code `/api/...`.
+- **Built assets are absolute (`/_next/...`) and break under ingress unless
+  Flask rewrites them.** Next's static export hard-codes root-relative asset
+  URLs. Under HA ingress the app is served at `/api/hassio_ingress/<token>/...`,
+  so an un-prefixed `/_next/` 404s at the HA root — the page renders but has
+  **no CSS and no JS**. Fix is in `ui.py`: `_rewrite_frontend_html()` prefixes
+  every `/_next/` and `/404` with `_ingress_base()` before serving, and the
+  `@app.route("/_next/<path>")` catch-all serves the assets. Never bypass that
+  with a raw `send_file`, or styling breaks.
 - **Use RELATIVE imports between components** (`../../atoms/...`). The `@/`
   alias was trialled but Next only honours it when `baseUrl`/`paths` are read
   from the exact tsconfig shape it expects, and relative imports are

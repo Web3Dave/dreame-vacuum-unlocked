@@ -20,7 +20,7 @@ import shutil
 import time
 
 
-from flask import Flask, abort, jsonify, redirect, render_template, request, send_file, send_from_directory
+from flask import Flask, Response, abort, jsonify, redirect, render_template, request, send_file, send_from_directory
 
 import ha_client
 import yaml
@@ -198,24 +198,58 @@ _FRONTEND_OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fronte
 
 def _frontend_page(page: str, fallback_callable):
     """Serve a ported React page from the built frontend when present, else run
-    the given fallback callable (the old Jinja render_template). Imported
-    gradually: each ported page's Flask route calls this with its Jinja
-    fallback, so the old UI keeps working until the build ships."""
+    the given fallback callable (the old Jinja render_template).
+
+    HA ingress strips its token prefix from the proxied request path, so the
+    add-on receives the *bare* path (e.g. `/audio`) but all of the app's built
+    asset URLs are absolute (`/_next/static/...`). Un-prefixed those 404 at the
+    HA root / break under ingress. So we rewrite every `/_next/` (and other
+    absolute resource paths) to include the ingress base before serving, and
+    Flask hosts the assets under that base via the `/_next/` route."""
     index = os.path.join(_FRONTEND_OUT, page, "index.html")
-    if os.path.isfile(index):
-        return send_from_directory(_FRONTEND_OUT, os.path.join(page, "index.html"))
-    return fallback_callable()
+    if not os.path.isfile(index):
+        return fallback_callable()
+    html = _rewrite_frontend_html(index)
+    return Response(html, mimetype="text/html")
+
+
+def _rewrite_frontend_html(path):
+    """Read a built frontend HTML and prefix all root-relative asset URLs
+    (`/_next/`, `/404`) with the HA ingress base so they resolve under ingress.
+    Asset hrefs/srcs become `{base}/_next/...`, which the `/_next/` catch-all
+    route serves."""
+    html = open(path, encoding="utf-8").read()
+    base = _ingress_base()
+    if base:
+        html = html.replace('href="/_next/', f'href="{base}/_next/')
+        html = html.replace('src="/_next/', f'src="{base}/_next/')
+        # prefetch/route URLs emitted by Next, and the 404 asset
+        html = html.replace('"/_next/', f'"{base}/_next/')
+        html = html.replace('href="/404', f'href="{base}/404')
+    return html
+
+
+@app.route("/_next/<path:filename>")
+def frontend_next_asset(filename):
+    """Serve Build's _next/static/* (CSS + JS chunks) under the ingress path.
+    HA ingress strips the token, so the add-on receives /_next/... at its root;
+    despite the /ui/ routing, these are hosted at _FRONTEND_OUT/_next."""
+    path = os.path.join(_FRONTEND_OUT, "_next", filename)
+    if not os.path.isfile(path):
+        abort(404)
+    return send_from_directory(os.path.join(_FRONTEND_OUT, "_next"), filename)
 
 
 @app.route("/ui/")
 def frontend_index():
-    """Serve the Next static app at /ui/ (a reserved path - the old Jinja routes
-    and /api/* stay where they are). index.html lives at the out/ root."""
+    """Serve the Next static app at /ui/ (a reserved path - the old Jinja
+    routes and /api/* stay where they are). index.html lives at the out/ root."""
     idx = os.path.join(_FRONTEND_OUT, "index.html")
     if not os.path.isfile(idx):
         return render_template("index.html", page="devices", devices=[], ha_up=False,
                                viewer=_viewer(), base=_ingress_base(), routes=[])
-    return send_from_directory(_FRONTEND_OUT, "index.html")
+    html = _rewrite_frontend_html(idx)
+    return Response(html, mimetype="text/html")
 
 
 @app.route("/ui/<path:filename>")
