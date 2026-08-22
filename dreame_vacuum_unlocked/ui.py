@@ -263,15 +263,22 @@ def _rewrite_frontend_html(path):
         html = html.replace('href="/404', f'href="{base}/404')
         # App-page nav links prerendered into the HTML (root-relative paths):
         # home is the bare "/", pages/leaves are "/<segment>...". Both become
-        # based against the ingress prefix. Niches that must stay root-relative
-        # are excluded (already handled above).
+        # based against the ingress prefix. CRITICAL: only prefix URLs that are
+        # still root-relative - the `/_next/` replacements above (and any
+        # already-prefixed URL) must NOT be re-matched, or the base is applied
+        # twice (v3.65.1 bug: /_next assets became {base}{base}/_next/... and
+        # 404'd, so loadSprites failed and the map canvas stayed empty).
         html = re.sub(
             r'href="/([a-z_][^"#?:]*(?:\?[^"]*)?)"',
-            lambda m: f'href="{base}/{m.group(1)}"',
+            lambda m: (
+                m.group(0)  # leave alone - already prefixed (starts with base)
+                if m.group(1).startswith(base.lstrip("/"))
+                else f'href="{base}/{m.group(1)}"'
+            ),
             html,
         )
-        # home link: href="/" -> href="{base}/"
-        html = re.sub(r'href="/(?=")', f'href="{base}/', html)
+        # home link: href="/" -> href="{base}/"  (only the root "/", not based paths)
+        html = re.sub(r'href="/"(?![^"])', f'href="{base}/', html)
     return html
 
 
