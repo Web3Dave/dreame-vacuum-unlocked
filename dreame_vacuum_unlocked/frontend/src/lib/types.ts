@@ -91,9 +91,8 @@ export interface Tag {
 
 export interface SnapshotSummary {
   filename: string;
-  size?: number;
-  ts?: number;
-  has_results?: boolean;
+  taken_at?: number;
+  kind?: string;
 }
 
 export interface TagsOverviewPayload {

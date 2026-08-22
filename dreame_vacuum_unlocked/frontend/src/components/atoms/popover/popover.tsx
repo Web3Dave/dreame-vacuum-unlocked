@@ -23,6 +23,7 @@ export interface PopoverProps {
 export default function Popover({ trigger, children, align = "end", id }: PopoverProps) {
   const [open, setOpen] = useState(false);
   const btnRef = useRef<HTMLSpanElement>(null);
+  const layerRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ top: number; left?: number; right?: number } | null>(null);
 
   useEffect(() => {
@@ -47,7 +48,15 @@ export default function Popover({ trigger, children, align = "end", id }: Popove
   useEffect(() => {
     if (!open) return undefined;
     const onDocClick = (e: MouseEvent) => {
-      if (btnRef.current?.contains(e.target as Node)) return;
+      // Ignore clicks on the trigger OR on the portaled menu itself. If we
+      // close on mousedown for anything outside the trigger, clicking a menu
+      // item (portaled to document.body, so NOT inside btnRef) unmounts the
+      // layer before the item's onClick can run - which is why menu items
+      // appeared dead. Only an outside click that is not the trigger/not the
+      // layer should close.
+      const target = e.target as Node;
+      if (btnRef.current?.contains(target)) return;
+      if (layerRef.current?.contains(target)) return;
       setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
@@ -71,11 +80,13 @@ export default function Popover({ trigger, children, align = "end", id }: Popove
         pos &&
         createPortal(
           <div
+            ref={layerRef}
             id={id}
             role="menu"
             className={styles.layer}
             style={{ top: pos.top, right: pos.right, left: pos.left }}
             data-popover=""
+            onMouseDown={(e) => e.stopPropagation()}
             onClick={(e) => e.stopPropagation()}
           >
             {children(() => setOpen(false))}

@@ -4,9 +4,8 @@ import { useEffect, useState } from "react";
 import Button from "../../../components/atoms/button/button";
 import Spinner from "../../../components/atoms/spinner/spinner";
 import Modal from "../../../components/atoms/modal/modal";
-import StatusMessage from "../../../components/molecules/statusMessage/statusMessage";
 import { call, readInlinedData, apiUrl } from "../../../lib/api";
-import type { SnapshotSummary, Tag, TagsOverviewPayload } from "../../../lib/types";
+import type { Classifier, SnapshotSummary, Tag, TagsOverviewPayload } from "../../../lib/types";
 import SnapshotCard from "./snapshotCard/snapshotCard";
 import styles from "./tagsContent.module.css";
 
@@ -14,18 +13,25 @@ export default function TagsContent() {
   const [tags, setTags] = useState<Tag[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  // create dialog
+  // detail: tag whose screen is open (+ its full snapshots)
+  const [detail, setDetail] = useState<Tag | null>(null);
+  const [detailSnaps, setDetailSnaps] = useState<SnapshotSummary[]>([]);
+  const [detailLoading, setDetailLoading] = useState(false);
+  // create / rename modals
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState("");
   const [newId, setNewId] = useState("");
   const [createErr, setCreateErr] = useState<string | null>(null);
-  // rename
   const [renaming, setRenaming] = useState<Tag | null>(null);
   const [renameName, setRenameName] = useState("");
-  // results dialog
+  // results + classify
   const [resultsFor, setResultsFor] = useState<{ tag: string; filename: string } | null>(null);
   const [results, setResults] = useState<any[]>([]);
-  const [status, setStatus] = useState<string | null>(null);
+  const [classifiers, setClassifiers] = useState<{ id: string; name: string; classes: string[] }[]>([]);
+  const [classifyTarget, setClassifyTarget] = useState<{ tag: string; filename: string } | null>(null);
+  const [classifyCid, setClassifyCid] = useState("");
+  const [classifyLabel, setClassifyLabel] = useState("");
+  const [classifyErr, setClassifyErr] = useState<string | null>(null);
 
   const load = async () => {
     try {
@@ -46,11 +52,18 @@ export default function TagsContent() {
     else load();
   }, []);
 
+  async function openDetail(tag: Tag) {
+    setDetail(tag);
+    setDetailLoading(true);
+    const rs = await call<{ snapshots: SnapshotSummary[] }>(`api/tags/${encodeURIComponent(tag.id)}/snapshots?limit=200`);
+    setDetailSnaps(rs.data?.snapshots || []);
+    setDetailLoading(false);
+  }
+
   async function createTag() {
     setCreateErr(null);
     const rs = await call<{ tag?: Tag; error?: string }>("api/tags", {
-      method: "POST",
-      body: JSON.stringify({ name: newName, id: newId || undefined }),
+      method: "POST", body: JSON.stringify({ name: newName, id: newId || undefined }),
     });
     if (!rs.ok || !rs.data?.tag) { setCreateErr(rs.data?.error || "Could not create tag"); return; }
     setShowCreate(false); setNewName(""); setNewId(""); load();
@@ -58,29 +71,19 @@ export default function TagsContent() {
 
   async function renameTag() {
     if (!renaming) return;
-    const rs = await call(`api/tags/${encodeURIComponent(renaming.id)}`, {
-      method: "PUT",
-      body: JSON.stringify({ name: renameName }),
-    });
+    const rs = await call(`api/tags/${encodeURIComponent(renaming.id)}`, { method: "PUT", body: JSON.stringify({ name: renameName }) });
     if (!rs.ok) { setError("Could not rename; check the name"); return; }
-    setRenaming(null); load();
+    setRenaming(null); load(); if (detail) setDetail({ ...detail, name: renameName });
   }
 
   async function deleteTag(id: string, count: number) {
     if (!confirm(`Delete tag and its ${count} snapshot(s)?`)) return;
     await call(`api/tags/${encodeURIComponent(id)}`, { method: "DELETE" });
+    if (detail?.id === id) setDetail(null);
     load();
   }
 
-  // classify (assign a classification + label to a snapshot)
-  const [classifyTarget, setClassifyTarget] = useState<{ tag: string; filename: string } | null>(null);
-  const [classifiers, setClassifiers] = useState<{ id: string; name: string; classes: string[] }[]>([]);
-  const [classifyCid, setClassifyCid] = useState("");
-  const [classifyLabel, setClassifyLabel] = useState("");
-  const [classifyErr, setClassifyErr] = useState<string | null>(null);
-
   async function classifySnapshot(tag: string, filename: string) {
-    // Load the classifier list so the assign modal can offer classifier + label.
     const rs = await call<{ classifications: { id: string; name: string; classes: string[] }[] }>("api/classifications");
     const list = rs.data?.classifications || [];
     setClassifiers(list);
@@ -102,8 +105,7 @@ export default function TagsContent() {
 
   async function rerun(tag: string, filename: string) {
     const rs = await call<{ ok?: boolean; error?: string }>(
-      `api/tags/${encodeURIComponent(tag)}/snapshots/${encodeURIComponent(filename)}/rerun`,
-      { method: "POST" }
+      `api/tags/${encodeURIComponent(tag)}/snapshots/${encodeURIComponent(filename)}/rerun`, { method: "POST" }
     );
     if (!rs.ok && rs.data?.error) setError(rs.data.error);
   }
@@ -116,54 +118,75 @@ export default function TagsContent() {
     setResultsFor({ tag, filename });
   }
 
+  // ---- Tag detail view (a specific tag's screen) ----
+  if (detail) {
+    return (
+      <div className={styles.wrap}>
+        <div className={styles.top}>
+          <button type="button" className={styles.back} onClick={() => setDetail(null)}>&larr; All tags</button>
+          <h1 className={styles.h1}>{detail.name}</h1>
+          <span className={styles.spacer} />
+          <Button variant="ghost" onClick={() => { setRenaming(detail); setRenameName(detail.name); }}>Rename</Button>
+          <Button variant="danger" onClick={() => void deleteTag(detail.id, detail.count ?? 0)}>Delete</Button>
+        </div>
+
+        {detail.classifications && detail.classifications.length ? (
+          <div className={styles.chips}>
+            {detail.classifications.map((c) => <span key={c.id} className={styles.chip}>{c.name}</span>)}
+          </div>
+        ) : null}
+
+        {detailLoading ? (
+          <p className={styles.sub}><Spinner /> Loading…</p>
+        ) : detailSnaps.length ? (
+          <div className={styles.shotsGrid}>
+            {detailSnaps.map((s) => (
+              <SnapshotCard key={s.filename} tag={detail.id} snap={s}
+                onClassify={() => void classifySnapshot(detail.id, s.filename)}
+                onRerun={() => void rerun(detail.id, s.filename)}
+                onViewResults={() => void viewResults(detail.id, s.filename)} />
+            ))}
+          </div>
+        ) : (
+          <p className={styles.hint}>No snapshots for this tag yet.</p>
+        )}
+
+        {dialogs()}
+      </div>
+    );
+  }
+
+  // ---- Overview: horizontally scrollable tag cards, each with a "more" ----
   return (
     <div className={styles.wrap}>
       <header className={styles.header}>
         <h1 className={styles.h1}>Tags</h1>
         <span className={styles.sub}>{tags.length ? `${tags.length} tag(s)` : ""}</span>
+        <span className={styles.spacer} />
+        <Button variant="primary" onClick={() => setShowCreate(true)}>New tag</Button>
       </header>
 
-      <div className={styles.bar}>
-        <Button variant="primary" onClick={() => setShowCreate(true)}>New tag</Button>
-      </div>
-
       {error && <p className={styles.err}>{error}</p>}
-      {status && <p className={styles.status}>{status}</p>}
 
       {loading ? (
         <p className={styles.sub}><Spinner /> Loading…</p>
       ) : tags.length ? (
-        <div className={styles.grid}>
+        <div className={styles.tagRow}>
           {tags.map((t) => (
-            <div key={t.id} className={styles.card}>
-              <div className={styles.cardHead}>
-                <h2 className={styles.cardTitle}>{t.name}</h2>
-                <span className={styles.cardSub}>{t.count ?? 0} snapshot{(t.count ?? 0) === 1 ? "" : "s"}</span>
-                <span className={styles.spacer} />
-                <Button variant="ghost" onClick={() => { setRenaming(t); setRenameName(t.name); }}>Rename</Button>
-                <Button variant="danger" onClick={() => void deleteTag(t.id, t.count ?? 0)}>Delete</Button>
+            <div key={t.id} className={styles.tagCard}>
+              <button type="button" className={styles.tagBody} onClick={() => void openDetail(t)}>
+                <span className={styles.tagName}>{t.name}</span>
+                <span className={styles.tagCount}>{t.count ?? 0}</span>
+                {t.snapshots && t.snapshots[0] ? (
+                  <img className={styles.tagThumb} src={apiUrl(`snapshot/${encodeURIComponent(t.id)}/${encodeURIComponent(t.snapshots[0].filename)}`)} alt={t.name} loading="lazy" />
+                ) : null}
+              </button>
+              <div className={styles.tagFoot}>
+                {t.classifications && t.classifications.length ? (
+                  <span className={styles.tagClf}>{t.classifications.length} clf</span>
+                ) : <span />}
+                <button type="button" className={styles.moreBtn} title="Open this tag" onClick={() => void openDetail(t)}>&rarr;</button>
               </div>
-              {t.classifications && t.classifications.length ? (
-                <div className={styles.chips}>
-                  {t.classifications.map((c) => <span key={c.id} className={styles.chip}>{c.name}</span>)}
-                </div>
-              ) : null}
-              {t.snapshots && t.snapshots.length ? (
-                <div className={styles.shots}>
-                  {t.snapshots.map((s) => (
-                    <SnapshotCard
-                      key={s.filename}
-                      tag={t.id}
-                      snap={s}
-                      onClassify={async () => { await classifySnapshot(t.id, s.filename); }}
-                      onRerun={() => void rerun(t.id, s.filename)}
-                      onViewResults={() => void viewResults(t.id, s.filename)}
-                    />
-                  ))}
-                </div>
-              ) : (
-                <p className={styles.hint}>No snapshots yet for this tag.</p>
-              )}
             </div>
           ))}
         </div>
@@ -174,77 +197,54 @@ export default function TagsContent() {
         </div>
       )}
 
-      {/* create */}
-      <Modal open={showCreate} title="New tag" onClose={() => setShowCreate(false)}
-        footer={<>
-          <Button onClick={() => setShowCreate(false)}>Cancel</Button>
-          <Button variant="primary" onClick={() => void createTag()}>Create</Button>
-        </>}>
-        <label className={styles.field}>
-          <span>Name</span>
-          <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="e.g. poop_check" />
-        </label>
-        <label className={styles.field}>
-          <span>ID (optional)</span>
-          <input value={newId} onChange={(e) => setNewId(e.target.value)} placeholder="letters/numbers" />
-        </label>
-        {createErr && <p className={styles.errModal}>{createErr}</p>}
-      </Modal>
-
-      {/* rename */}
-      <Modal open={!!renaming} title="Rename tag" onClose={() => setRenaming(null)}
-        footer={<>
-          <Button onClick={() => setRenaming(null)}>Cancel</Button>
-          <Button variant="primary" onClick={() => void renameTag()}>Save</Button>
-        </>}>
-        <label className={styles.field}>
-          <span>Display name</span>
-          <input value={renameName} onChange={(e) => setRenameName(e.target.value)} />
-        </label>
-        {renaming && <p className={styles.hint}>The id ({renaming.id}) stays unchanged.</p>}
-      </Modal>
-
-      {/* assign classify */}
-      <Modal open={!!classifyTarget} title="Assign classification" onClose={() => setClassifyTarget(null)}
-        footer={<>
-          <Button onClick={() => setClassifyTarget(null)}>Cancel</Button>
-          <Button variant="primary" disabled={!classifyCid || !classifyLabel} onClick={() => void submitClassify()}>Save</Button>
-        </>}>
-        <p className={styles.hint}>Label this snapshot for the chosen classification.</p>
-        <label className={styles.field}>
-          <span>Classification</span>
-          <select className={styles.fieldSelect} value={classifyCid}
-            onChange={(e) => { setClassifyCid(e.target.value); const c = classifiers.find((x) => x.id === e.target.value); setClassifyLabel(c?.classes?.[0] || ""); }}>
-            {classifiers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-        </label>
-        <label className={styles.field}>
-          <span>Label / class</span>
-          <select className={styles.fieldSelect} value={classifyLabel} onChange={(e) => setClassifyLabel(e.target.value)}>
-            {classifiers.find((c) => c.id === classifyCid)?.classes.map((cl) => <option key={cl} value={cl}>{cl}</option>)}
-          </select>
-        </label>
-        {classifyErr && <p className={styles.errModal}>{classifyErr}</p>}
-      </Modal>
-
-      {/* results */}
-      <Modal open={!!resultsFor} title="Classifications" onClose={() => setResultsFor(null)}
-        footer={<>
-          <Button onClick={() => setResultsFor(null)}>Close</Button>
-          {resultsFor && <Button onClick={() => void rerun(resultsFor.tag, resultsFor.filename)}>Rerun classifiers</Button>}
-        </>}>
-        {results.length ? (
-          <table className={styles.results}>
-            <tbody>
-              {results.map((r, i) => (
-                <tr key={i}><td>{r.classifier || ""}</td><td>{r.label ?? ""}</td><td>{r.confidence ?? ""}</td></tr>
-              ))}
-            </tbody>
-          </table>
-        ) : (
-          <p className={styles.hint}>No classification results yet. Run 'Rerun classifiers'.</p>
-        )}
-      </Modal>
+      {dialogs()}
     </div>
   );
+
+  // ---- shared modals ----
+  function dialogs() {
+    return (
+      <>
+        <Modal open={showCreate} title="New tag" onClose={() => setShowCreate(false)}
+          footer={<><Button onClick={() => setShowCreate(false)}>Cancel</Button><Button variant="primary" onClick={() => void createTag()}>Create</Button></>}>
+          <label className={styles.field}><span>Name</span><input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="e.g. poop_check" /></label>
+          <label className={styles.field}><span>ID (optional)</span><input value={newId} onChange={(e) => setNewId(e.target.value)} placeholder="letters/numbers" /></label>
+          {createErr && <p className={styles.err}>{createErr}</p>}
+        </Modal>
+
+        <Modal open={!!renaming} title="Rename tag" onClose={() => setRenaming(null)}
+          footer={<><Button onClick={() => setRenaming(null)}>Cancel</Button><Button variant="primary" onClick={() => void renameTag()}>Save</Button></>}>
+          <label className={styles.field}><span>Display name</span><input value={renameName} onChange={(e) => setRenameName(e.target.value)} /></label>
+        </Modal>
+
+        {/* assign classify */}
+        <Modal open={!!classifyTarget} title="Assign classification" onClose={() => setClassifyTarget(null)}
+          footer={<><Button onClick={() => setClassifyTarget(null)}>Cancel</Button><Button variant="primary" disabled={!classifyCid || !classifyLabel} onClick={() => void submitClassify()}>Save</Button></>}>
+          <p className={styles.hint}>Label this snapshot for the chosen classification.</p>
+          <label className={styles.field}><span>Classification</span>
+            <select className={styles.fieldSelect} value={classifyCid}
+              onChange={(e) => { setClassifyCid(e.target.value); const c = classifiers.find((x) => x.id === e.target.value); setClassifyLabel(c?.classes?.[0] || ""); }}>
+              {classifiers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select></label>
+          <label className={styles.field}><span>Label / class</span>
+            <select className={styles.fieldSelect} value={classifyLabel} onChange={(e) => setClassifyLabel(e.target.value)}>
+              {classifiers.find((c) => c.id === classifyCid)?.classes.map((cl) => <option key={cl} value={cl}>{cl}</option>)}
+            </select></label>
+          {classifyErr && <p className={styles.err}>{classifyErr}</p>}
+        </Modal>
+
+        {/* results */}
+        <Modal open={!!resultsFor} title="Classifications" onClose={() => setResultsFor(null)}
+          footer={<><Button onClick={() => setResultsFor(null)}>Close</Button>{resultsFor && <Button onClick={() => void rerun(resultsFor.tag, resultsFor.filename)}>Rerun classifiers</Button>}</>}>
+          {results.length ? (
+            <table className={styles.results}>
+              <tbody>{results.map((r, i) => (
+                <tr key={i}><td>{r.classifier || ""}</td><td>{r.label ?? ""}</td><td>{r.confidence ?? ""}</td></tr>
+              ))}</tbody>
+            </table>
+          ) : (<p className={styles.hint}>No classification results yet. Run 'Rerun classifiers'.</p>)}
+        </Modal>
+      </>
+    );
+  }
 }
