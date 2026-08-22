@@ -196,7 +196,7 @@ def api_devices_enriched():
 _FRONTEND_OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "frontend", "out")
 
 
-def _frontend_page(page: str, fallback_callable):
+def _frontend_page(page: str, fallback_callable, data_provider=None):
     """Serve a ported React page from the built frontend when present, else run
     the given fallback callable (the old Jinja render_template).
 
@@ -205,12 +205,34 @@ def _frontend_page(page: str, fallback_callable):
     asset URLs are absolute (`/_next/static/...`). Un-prefixed those 404 at the
     HA root / break under ingress. So we rewrite every `/_next/` (and other
     absolute resource paths) to include the ingress base before serving, and
-    Flask hosts the assets under that base via the `/_next/` route."""
+    Flask hosts the assets under that base via the `/_next/` route.
+
+    `data_provider`, if given, is called to build the page's initial data; it is
+    inlined into the HTML as `window.__DATA__` so the React page hydrates from it
+    on first paint with zero client round-trip (Option 1 - hot first load). Leave
+    None to keep plain client-fetch."""
     index = os.path.join(_FRONTEND_OUT, page, "index.html")
     if not os.path.isfile(index):
         return fallback_callable()
     html = _rewrite_frontend_html(index)
+    if data_provider is not None:
+        data = data_provider()
+        if data is not None:
+            html = _inject_page_data(html, data)
     return Response(html, mimetype="text/html")
+
+
+def _inject_page_data(html: str, data: dict) -> str:
+    """Inline a JSON blob as window.__DATA__ into the served HTML so the React
+    layer reads initial state synchronously (no first-load fetch). Safely
+    escapes the JSON for a <script> context."""
+    blob = json.dumps(data).replace("</", "<\\u002f")
+    # Inject right after <head> so it's present before any module script runs.
+    head_marker = "<head>"
+    tag = f'<script>window.__DATA__={blob};</script>'
+    if head_marker in html:
+        return html.replace(head_marker, head_marker + tag, 1)
+    return tag + html
 
 
 def _rewrite_frontend_html(path):
@@ -339,7 +361,7 @@ def tasks():
     return _frontend_page("tasks", lambda: render_template(
         "tasks.html", base=_ingress_base(), viewer=_viewer(),
         page="tasks", addon_version=ADDON_VERSION
-    ))
+    ), data_provider=_tasks_payload)
 
 
 @app.route("/tasks/new")
@@ -659,8 +681,10 @@ def _busy_by_device():
     return busy
 
 
-@app.route("/api/tasks", methods=["GET"])
-def api_tasks():
+def _tasks_payload():
+    """The full Tasks page data (enriched tasks + devices + step schema). Both
+    the /api/tasks JSON route and the server-inlined page bootstrap use this so
+    they can never drift."""
     busy = _busy_by_device()
     tasks = config_store.list_tasks()
     for task in tasks:
@@ -675,7 +699,7 @@ def api_tasks():
              "detail": state.get("detail"), "run_id": state.get("run_id")}
             if task["running"] else None
         )
-    return jsonify({
+    return {
         "tasks": tasks,
         "devices": [
             {"did": d["did"], "name": d.get("name") or d["did"]}
@@ -691,7 +715,12 @@ def api_tasks():
             }
             for kind, spec in step_schema.STEP_TYPES.items()
         },
-    })
+    }
+
+
+@app.route("/api/tasks", methods=["GET"])
+def api_tasks():
+    return jsonify(_tasks_payload())
 
 
 @app.route("/api/tasks/yaml", methods=["POST"])
@@ -1210,7 +1239,7 @@ def audio_page():
     """Upload / manage the mp3 clips that can be mapped into the custom voice pack."""
     return _frontend_page("audio", lambda: render_template(
         "audio.html", base=_ingress_base(), viewer=_viewer(), page="audio"
-    ))
+    ), data_provider=_audio_payload)
 
 
 AUDIO_EXTS = (".mp3",)
@@ -1255,6 +1284,31 @@ def ensure_audio_wav(name: str) -> None:
         )
     except Exception as err:  # noqa: BLE001 - a cache miss must never block audio
         app.logger.warning("could not pre-convert %s to wav (will decode at play): %s", name, err)
+
+
+def _audio_devices_payload():
+    """Devices for the Audio page's "send to vacuum" picker, as [{did, name}]."""
+    return [
+        {"did": d.get("did"), "name": d.get("name") or d.get("did")}
+        for d in store.list_devices()
+    ]
+
+
+def _audio_payload():
+    """The Audio page's initial data (uploaded clips + target devices). Both the
+    /api/audio JSON route consumers and the server-inlined bootstrap use it."""
+    try:
+        if not os.path.isdir(AUDIO_ROOT):
+            os.makedirs(AUDIO_ROOT, exist_ok=True)
+        files = sorted(
+            n for n in os.listdir(AUDIO_ROOT)
+            if n.lower().endswith(AUDIO_EXTS) and os.path.isfile(
+                os.path.join(AUDIO_ROOT, n)
+            )
+        )
+    except Exception as err:  # noqa: BLE001
+        return {"files": [], "devices": _audio_devices_payload(), "error": str(err)}
+    return {"files": files, "devices": _audio_devices_payload()}
 
 
 @app.route("/api/audio")

@@ -53,3 +53,20 @@ export async function callFormData<T = unknown>(path: string, form: FormData): P
   }
   return { ok: res.ok, status: res.status, data: data as T };
 }
+
+/**
+ * Read the server-inlined initial data, if present.
+ *
+ * Flask writes each ported page's initial payload as `window.__DATA__` in the
+ * served HTML (Option 1 - hot first load). The page hydrates from it
+ * synchronously on mount, so there is NO first-load fetch round-trip. When
+ * absent (a dev/preview build, or a page not yet wired), the page falls back to
+ * its normal client fetch.
+ */
+export function readInlinedData<T = unknown>(): T | null {
+  if (typeof window !== "undefined") {
+    const d = (window as unknown as { __DATA__?: unknown }).__DATA__;
+    if (d !== undefined) return d as T;
+  }
+  return null;
+}

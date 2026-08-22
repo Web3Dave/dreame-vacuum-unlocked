@@ -6,8 +6,14 @@ import Select from "../../components/atoms/select/select";
 import Spinner from "../../components/atoms/spinner/spinner";
 import NavBar from "../../components/organisms/navbar/navbar";
 import StatusMessage from "../../components/molecules/statusMessage/statusMessage";
-import { apiUrl, call, callFormData } from "../../lib/api";
+import { readInlinedData, apiUrl, call, callFormData } from "../../lib/api";
 import styles from "./page.module.css";
+
+/** Shape of the server-inlined initial data (matches ui.py _audio_payload). */
+interface AudioBootstrap {
+  files?: string[];
+  devices?: { did: string; name?: string }[];
+}
 
 export default function AudioPage() {
   const [files, setFiles] = useState<string[]>([]);
@@ -18,25 +24,40 @@ export default function AudioPage() {
   const [busy, setBusy] = useState<string | null>(null); // audio file name being sent/deleted
   const fileRef = useRef<HTMLInputElement>(null);
 
+  const applyData = useCallback((audio?: string[], devs?: { did: string; name: string }[]) => {
+    setFiles(audio ?? []);
+    setDevices(devs ?? []);
+    if (!did && devs?.length) setDid(devs[0].did);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const load = useCallback(async () => {
     try {
       const [audioRs, devRs] = await Promise.all([
         call<{ files: string[] }>("api/audio"),
         call<{ devices: { did: string; name?: string }[] }>("api/devices"),
       ]);
-      setFiles(audioRs.data?.files ?? []);
       const devs = (devRs.data?.devices || []).map((d) => ({ did: d.did, name: d.name || d.did }));
-      setDevices(devs);
-      if (!did && devs.length) setDid(devs[0].did);
+      applyData(audioRs.data?.files, devs);
     } catch (e) {
       setError((e as Error).message || "Could not load audio");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [applyData]);
 
   useEffect(() => {
+    // Option 1: hydrate from the server-inlined bootstrap when present (no
+    // first-load fetch). Fall back to the normal client fetch otherwise.
+    const boot = readInlinedData<AudioBootstrap>();
+    if (boot && (boot.files !== undefined || boot.devices !== undefined)) {
+      applyData(
+        boot.files,
+        (boot.devices || []).map((d) => ({ did: d.did, name: d.name || d.did }))
+      );
+      return;
+    }
     load();
-  }, [load]);
+  }, [applyData, load]);
 
   async function send(name: string) {
     if (!did) {

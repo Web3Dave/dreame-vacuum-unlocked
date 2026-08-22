@@ -5,7 +5,7 @@ import Button from "../../components/atoms/button/button";
 import Modal from "../../components/atoms/modal/modal";
 import NavBar from "../../components/organisms/navbar/navbar";
 import TaskCard from "../../components/organisms/taskCard/taskCard";
-import { call } from "../../lib/api";
+import { call, readInlinedData } from "../../lib/api";
 import type { TasksPayload } from "../../lib/types";
 import styles from "./page.module.css";
 
@@ -16,27 +16,44 @@ export default function TasksPage() {
   const [exportSlug, setExportSlug] = useState<string | null>(null);
   const [exportYaml, setExportYaml] = useState("");
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const loadRef = useRef<() => void>(() => {});
+
+  const applyData = useCallback((payload: TasksPayload) => {
+    setData(payload);
+    setError(null);
+    const active = payload.tasks.some((t) => t.running || t.device_busy);
+    if (timerRef.current) clearTimeout(timerRef.current);
+    if (active) timerRef.current = setTimeout(loadRef.current, 2000);
+  }, []);
 
   const load = useCallback(async () => {
     try {
       const rs = await call<TasksPayload>("api/tasks");
       if (!rs.ok) throw new Error(`api/tasks -> ${rs.status}`);
-      setData(rs.data);
-      setError(null);
-      const active = rs.data.tasks.some((t) => t.running || t.device_busy);
-      if (timerRef.current) clearTimeout(timerRef.current);
-      if (active) timerRef.current = setTimeout(load, 2000);
+      applyData(rs.data);
     } catch (e) {
       setError((e as Error).message || "Could not load tasks");
     }
-  }, []);
+  }, [applyData]);
+
+  // Keep loadRef pointing at the latest load (breaks the applyData<->load cycle).
+  useEffect(() => {
+    loadRef.current = load;
+  }, [load]);
 
   useEffect(() => {
-    load();
+    // Option 1: hydrate from the server-inlined bootstrap when present (no
+    // first-load fetch). Still arm polling if a task is running/busy.
+    const boot = readInlinedData<TasksPayload>();
+    if (boot && boot.tasks) {
+      applyData(boot);
+    } else {
+      load();
+    }
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [load]);
+  }, [applyData, load]);
 
   async function runTask(slug: string): Promise<string | null> {
     setBusySlug(slug);
