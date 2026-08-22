@@ -6,6 +6,10 @@
   width: 100%;
   max-width: 100vw;
   overflow-x: auto;
+  /* overflow-x:auto on a flex row collapses overflow-y to 'auto' too, which
+     allows a vertical scroll on mobile even when nothing overflows vertically.
+     Pin it to hidden so only horizontal scroll is possible. */
+  overflow-y: hidden;
   flex-wrap: nowrap;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;

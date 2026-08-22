@@ -4,7 +4,7 @@
 
 .header {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 12px;
   flex-wrap: wrap;
   margin-bottom: 20px;
@@ -16,8 +16,20 @@
   font-weight: 600;
 }
 
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 .err {
   color: var(--bad);
+  font-size: 13px;
+}
+
+.hint {
+  color: var(--muted);
   font-size: 13px;
 }
 
@@ -27,6 +39,25 @@
   gap: 8px;
   color: var(--muted);
   font-size: 13px;
+}
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 32px 16px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+  text-align: center;
+}
+
+.empty .err {
+  margin: 0;
+}
+
+.empty .hint {
+  margin: 0;
 }
 
 .canvasWrap {
