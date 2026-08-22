@@ -144,13 +144,17 @@ export default function MapContent() {
       try {
         const url = `api/maps/${encodeURIComponent(didRef.current)}/current`;
         const rs = await call<Record<string, any>>(url);
-        if (!alive || !rs.ok || !rs.data) {
-          if (rs.status === 404 || (rs.data && (rs.data as any).error === "no_map")) {
-            setError("No map available yet for this device.");
-          }
+        if (!alive) return;
+        if (!rs.ok || !rs.data) {
+          // Surface a clear reason instead of silently doing nothing, and KEEP
+          // polling so the map appears the moment the robot comes back.
+          const reason = (rs.data && (rs.data as any).error) || `Map request failed (HTTP ${rs.status})`;
+          setError(reason);
+          timer = setTimeout(tick, 5000);
           return;
         }
         await renderDoc(rs.data);
+        setError(null);
         if (alive) timer = setTimeout(tick, 3000);
       } catch (e) {
         if (alive) {
