@@ -16,6 +16,7 @@ import json
 import logging
 import hashlib
 import os
+import re
 import shutil
 import time
 
@@ -240,10 +241,18 @@ def _inject_page_data(html: str, data: dict, base: str = "") -> str:
 
 
 def _rewrite_frontend_html(path):
-    """Read a built frontend HTML and prefix all root-relative asset URLs
-    (`/_next/`, `/404`) with the HA ingress base so they resolve under ingress.
-    Asset hrefs/srcs become `{base}/_next/...`, which the `/_next/` catch-all
-    route serves."""
+    """Read a built frontend HTML and prefix all root-relative URLs with the HA
+    ingress base so they resolve under ingress.
+
+    Two classes of root-relative URL need the prefix:
+    - `/_next/...` (CSS/JS assets) -> `{base}/_next/...`, served by the
+      `/_next/` catch-all route.
+    - Nav/app-page links baked in by Next's static prerender (`/`, `/tasks`,
+      `/tags`, ...) -> `{base}/tasks` etc. Without this the raw HTML ships
+      `/tasks` links that 404 at the HA root on click.
+
+    JS-rendered links (settings gear, task cards) are not in the static HTML;
+    they read `window.__BASE__` at runtime via routeHref()."""
     html = open(path, encoding="utf-8").read()
     base = _ingress_base()
     if base:
@@ -252,6 +261,17 @@ def _rewrite_frontend_html(path):
         # prefetch/route URLs emitted by Next, and the 404 asset
         html = html.replace('"/_next/', f'"{base}/_next/')
         html = html.replace('href="/404', f'href="{base}/404')
+        # App-page nav links prerendered into the HTML (root-relative paths):
+        # home is the bare "/", pages/leaves are "/<segment>...". Both become
+        # based against the ingress prefix. Niches that must stay root-relative
+        # are excluded (already handled above).
+        html = re.sub(
+            r'href="/([a-z_][^"#?:]*(?:\?[^"]*)?)"',
+            lambda m: f'href="{base}/{m.group(1)}"',
+            html,
+        )
+        # home link: href="/" -> href="{base}/"
+        html = re.sub(r'href="/(?=")', f'href="{base}/', html)
     return html
 
 
