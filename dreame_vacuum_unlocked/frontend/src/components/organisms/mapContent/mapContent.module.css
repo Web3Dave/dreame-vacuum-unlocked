@@ -61,16 +61,17 @@
 }
 
 .canvasWrap {
+  display: inline-block;
   background: var(--bg);
   border: 1px solid var(--line);
   border-radius: var(--radius);
   overflow: auto;
+  max-width: 100%;
   max-height: calc(100vh - 200px);
 }
 
 .canvas {
   display: block;
-  width: 100%;
+  max-width: 100%;
   height: auto;
-  margin: 0 auto;
 }

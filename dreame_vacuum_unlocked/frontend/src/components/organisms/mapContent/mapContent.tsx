@@ -178,6 +178,15 @@ export default function MapContent() {
           { scale, opacity: 0.9, fov: 70, reach: 900 }
         );
       }
+      // Confirms the canvas actually has real pixel content and a nonzero
+      // on-screen (CSS) size - distinguishes "drew fine but CSS is hiding/
+      // collapsing it" from "nothing was ever drawn".
+      const rect = canvas.getBoundingClientRect();
+      console.log(
+        "[mapContent] drew ok - bitmap", canvas.width, "x", canvas.height,
+        "| on-screen", Math.round(rect.width), "x", Math.round(rect.height),
+        "| stage hidden:", canvas.closest(`.${styles.stage}`)?.hasAttribute("hidden")
+      );
       return true;
     } catch (e) {
       console.error("[mapContent] renderDoc failed on doc:", doc, e);
@@ -273,7 +282,7 @@ export default function MapContent() {
           (renderDoc needs the canvas, but the canvas only appears after a draw)
           - a deadlock. Loading/empty messages overlay it. */}
       <div className={styles.stage} hidden={showMap ? false : true}>
-        <div className={styles.canvasWrap} style={{ width: "min-content" }}>
+        <div className={styles.canvasWrap}>
           <canvas ref={canvasRef} className={styles.canvas} />
         </div>
       </div>
