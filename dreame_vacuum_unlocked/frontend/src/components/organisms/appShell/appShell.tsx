@@ -5,6 +5,7 @@ import NavBar from "../navbar/navbar";
 import DevicesContent from "../devicesContent/devicesContent";
 import AudioContent from "../audioContent/audioContent";
 import TasksContent from "../tasksContent/tasksContent";
+import MapContent from "../mapContent/mapContent";
 import LegacyTab from "./legacyTab/legacyTab";
 import { readBase } from "../../../lib/api";
 import styles from "./appShell.module.css";
@@ -14,6 +15,7 @@ const REACT_TABS: Record<string, React.ComponentType> = {
   devices: DevicesContent,
   audio: AudioContent,
   tasks: TasksContent,
+  maps: MapContent,
 };
 
 /** Route paths that are NOT yet ported; shown via an iframe to the Jinja page. */
@@ -21,7 +23,6 @@ const LEGACY_TABS: Record<string, string> = {
   tags: "tags",
   classifications: "classifications",
   cleaning: "cleaning",
-  maps: "maps",
   activity: "activity",
   config: "config",
   voice: "voice",
