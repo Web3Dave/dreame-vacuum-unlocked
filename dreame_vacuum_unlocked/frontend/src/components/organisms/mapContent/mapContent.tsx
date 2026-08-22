@@ -70,75 +70,120 @@ export default function MapContent() {
     return () => { alive = false; };
   }, []);
 
-  // Load the integration's map module once.
+  // Load the integration's map module once. This is a genuine browser-native
+  // dynamic import() (webpackIgnore bypasses Next's bundler), fetching a
+  // cross-origin-ish absolute URL served by Home Assistant core, not by this
+  // app - a CSP block, a wrong MIME type, or the HA host being unreachable
+  // from inside an ingress iframe can all leave this promise neither
+  // resolving nor rejecting in some browsers, instead of throwing. Without a
+  // timeout that looks identical to "still loading" forever, which is
+  // indistinguishable from a slow network in the UI - so race it against one
+  // and surface *something* either way.
   useEffect(() => {
     let alive = true;
+    const timedOut = { current: false };
+    const timer = setTimeout(() => {
+      timedOut.current = true;
+      if (alive && !mapApiRef.current) {
+        console.error(`[mapContent] timed out loading ${MAP_JS} after 8s (no reject/resolve - `
+          + `check the Network tab for its request status and the Console for CSP errors)`);
+        setMapState("error");
+        setMessage(
+          `Map renderer did not load (timed out fetching ${MAP_JS}). Check the browser console `
+          + "and Network tab - this is usually a blocked/failed request to Home Assistant, not the add-on."
+        );
+      }
+    }, 8000);
+
     (async () => {
       try {
+        console.log(`[mapContent] loading map renderer from ${MAP_JS}`);
         const mod = await import(/* webpackIgnore: true */ MAP_JS);
-        if (alive) {
-          mapApiRef.current = mod as unknown as MapApi;
-          await (mod as unknown as MapApi).loadSprites();
+        if (!alive) return;
+        mapApiRef.current = mod as unknown as MapApi;
+        console.log("[mapContent] map renderer module loaded", mod);
+        await (mod as unknown as MapApi).loadSprites();
+        console.log("[mapContent] sprites loaded");
+        if (alive && timedOut.current) {
+          // Recovered after the timeout already fired - clear the error so
+          // the next successful poll can show the map instead of being
+          // stuck behind a stale error state.
+          setMapState("loading");
+          setMessage(null);
         }
       } catch (e) {
+        console.error("[mapContent] failed to load map renderer:", e);
         if (alive) {
           setMapState("error");
-          setMessage("Map renderer unavailable: " + ((e as Error).message || ""));
+          setMessage("Map renderer unavailable: " + ((e as Error).message || String(e)));
         }
       }
     })();
-    return () => { alive = false; };
+    return () => { alive = false; clearTimeout(timer); };
   }, []);
 
   const renderDoc = useCallback(async (doc: Record<string, any>) => {
     const canvas = canvasRef.current;
     const api = mapApiRef.current;
-    if (!canvas) return false;
-    if (!api) return false; // map.js still loading; caller retries
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return false;
-    let decoded: any;
-    try {
-      decoded = api.decodeMap(doc);
-    } catch (e) {
-      setMessage(`Could not decode the map: ${(e as Error).message}`);
+    if (!canvas) {
+      console.warn("[mapContent] renderDoc: no canvas ref yet");
       return false;
     }
-    const scale = (doc as any).suggested_scale || 5;
-    const width = decoded.cols * scale;
-    const height = decoded.rows * scale;
-    if (canvas.width !== width || canvas.height !== height) {
-      canvas.width = width;
-      canvas.height = height;
+    if (!api) {
+      console.warn("[mapContent] renderDoc: map renderer not loaded yet");
+      return false; // map.js still loading; caller retries
     }
-    const key = `${(doc as any).map_id}|${(doc as any).cells.join("x")}|${(doc as any).origin.join(",")}`;
-
-    if (!baseRef.current || baseKeyRef.current !== key) {
-      const base = document.createElement("canvas");
-      base.width = width;
-      base.height = height;
-      const bctx = base.getContext("2d");
-      if (bctx) {
-        api.drawBase(bctx, decoded, { scale, showRoomNames: true });
-        if (decoded.dock) {
-          api.drawDock(bctx, decoded, { x: decoded.dock[0], y: decoded.dock[1], heading: decoded.dock_angle }, { scale });
-        }
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      console.warn("[mapContent] renderDoc: canvas 2d context unavailable");
+      return false;
+    }
+    // Everything below - not just decodeMap - can throw on an unexpected doc
+    // shape (a missing field the old Jinja page never happened to exercise,
+    // for instance). Catching only decodeMap let those propagate all the way
+    // out to fetchOnce's catch with no trace of where they actually came from.
+    try {
+      const decoded = api.decodeMap(doc);
+      const scale = (doc as any).suggested_scale || 5;
+      const width = decoded.cols * scale;
+      const height = decoded.rows * scale;
+      if (canvas.width !== width || canvas.height !== height) {
+        canvas.width = width;
+        canvas.height = height;
       }
-      baseRef.current = base;
-      baseKeyRef.current = key;
-    }
+      const key = `${(doc as any).map_id}|${(doc as any).cells.join("x")}|${(doc as any).origin.join(",")}`;
 
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    if (baseRef.current) ctx.drawImage(baseRef.current, 0, 0);
-    if (decoded.robot) {
-      api.drawVacuum(
-        ctx,
-        decoded,
-        { x: decoded.robot[0], y: decoded.robot[1], heading: decoded.angle },
-        { scale, opacity: 0.9, fov: 70, reach: 900 }
-      );
+      if (!baseRef.current || baseKeyRef.current !== key) {
+        const base = document.createElement("canvas");
+        base.width = width;
+        base.height = height;
+        const bctx = base.getContext("2d");
+        if (bctx) {
+          api.drawBase(bctx, decoded, { scale, showRoomNames: true });
+          if (decoded.dock) {
+            api.drawDock(bctx, decoded, { x: decoded.dock[0], y: decoded.dock[1], heading: decoded.dock_angle }, { scale });
+          }
+        }
+        baseRef.current = base;
+        baseKeyRef.current = key;
+      }
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (baseRef.current) ctx.drawImage(baseRef.current, 0, 0);
+      if (decoded.robot) {
+        api.drawVacuum(
+          ctx,
+          decoded,
+          { x: decoded.robot[0], y: decoded.robot[1], heading: decoded.angle },
+          { scale, opacity: 0.9, fov: 70, reach: 900 }
+        );
+      }
+      return true;
+    } catch (e) {
+      console.error("[mapContent] renderDoc failed on doc:", doc, e);
+      setMessage(`Could not render the map: ${(e as Error).message || e}`);
+      return false;
     }
-    return true;
   }, []);
 
   // Poll the live map while mounted + a device is selected.
@@ -155,13 +200,16 @@ export default function MapContent() {
         const rs = await call<Record<string, any>>(url);
         if (!alive) return false;
         if (!rs.ok || !rs.data) {
+          console.warn("[mapContent] map fetch not ok:", rs.status, rs.data);
           setMessage((rs.data && (rs.data as any).error) || `Map request failed (HTTP ${rs.status})`);
           return false;
         }
+        console.log("[mapContent] got map doc, keys:", Object.keys(rs.data), "rendererLoaded:", !!mapApiRef.current);
         const ok = await renderDoc(rs.data);
         if (ok) setMessage(null);
         return ok;
       } catch (e) {
+        console.error("[mapContent] fetchOnce threw:", e);
         if (alive) {
           setMessage((e as Error).message || "Could not load the live map");
         }
