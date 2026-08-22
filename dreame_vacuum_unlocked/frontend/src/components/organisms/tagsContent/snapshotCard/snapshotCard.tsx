@@ -20,16 +20,26 @@ interface SnapshotCardProps {
  * overflow or border-radius — the exact bug that cut the old tag menus off.
  */
 export default function SnapshotCard({ tag, snap, onClassify, onRerun, onViewResults }: SnapshotCardProps) {
-  const isVideo = /\.(mp4|mkv|webm)$/i.test(snap.filename);
+  const isVideo = snap.kind === "video" || /\.(mp4|mkv|webm)$/i.test(snap.filename);
   const src = apiUrl(`snapshot/${encodeURIComponent(tag)}/${encodeURIComponent(snap.filename)}`);
 
   return (
     <figure className={styles.card}>
       <div className={styles.thumb}>
         {isVideo ? (
-          <video className={styles.media} src={src} preload="metadata" muted playsInline />
+          // IMPORTANT: do NOT mount a real <video> element here. A grid of
+          // dozens of <video preload="metadata"> elements freezes mobile
+          // browsers (the whole tab hangs). Show a static clip placeholder
+          // instead; the Open link plays it in the browser.
+          <a className={styles.videoPlaceholder} href={src} target="_blank" rel="noopener noreferrer">
+            <svg viewBox="0 0 24 24" width="38" height="38" aria-hidden="true">
+              <circle cx="12" cy="12" r="10" fill="rgba(0,0,0,.55)" stroke="rgba(255,255,255,.5)" />
+              <path d="M10 9l5 3-5 3z" fill="#fff" />
+            </svg>
+            <span className={styles.typeBadge}>clip</span>
+          </a>
         ) : (
-          <img className={styles.media} src={src} alt={snap.filename} loading="lazy" />
+          <img className={styles.media} src={src} alt={snap.filename} loading="lazy" onClick={() => window.open(src, "_blank", "noopener")} />
         )}
         <div className={styles.menuAnchor}>
           <Popover

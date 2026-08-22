@@ -264,3 +264,9 @@
   grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
   gap: 10px;
 }
+
+.moreBar {
+  display: flex;
+  justify-content: center;
+  margin-top: 16px;
+}

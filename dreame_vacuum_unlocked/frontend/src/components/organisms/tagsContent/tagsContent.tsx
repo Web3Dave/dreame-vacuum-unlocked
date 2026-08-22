@@ -13,10 +13,36 @@ export default function TagsContent() {
   const [tags, setTags] = useState<Tag[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  // detail: tag whose screen is open (+ its full snapshots)
+  // detail: tag whose screen is open (+ its full snapshots, paginated)
   const [detail, setDetail] = useState<Tag | null>(null);
   const [detailSnaps, setDetailSnaps] = useState<SnapshotSummary[]>([]);
+  const [detailTotal, setDetailTotal] = useState(0);
   const [detailLoading, setDetailLoading] = useState(false);
+  const PAGE = 40;
+
+  async function openDetail(tag: Tag) {
+    setDetail(tag);
+    setDetailSnaps([]);
+    setDetailTotal(tag.count ?? 0);
+    setDetailLoading(true);
+    const rs = await call<{ snapshots: SnapshotSummary[]; total?: number }>(
+      `api/tags/${encodeURIComponent(tag.id)}/snapshots?offset=0&limit=${PAGE}`
+    );
+    setDetailSnaps(rs.data?.snapshots || []);
+    if (rs.data?.total !== undefined) setDetailTotal(rs.data.total);
+    setDetailLoading(false);
+  }
+
+  async function loadMoreDetail() {
+    if (!detail) return;
+    setDetailLoading(true);
+    const rs = await call<{ snapshots: SnapshotSummary[]; total?: number }>(
+      `api/tags/${encodeURIComponent(detail.id)}/snapshots?offset=${detailSnaps.length}&limit=${PAGE}`
+    );
+    setDetailSnaps((prev) => [...prev, ...(rs.data?.snapshots || [])]);
+    if (rs.data?.total !== undefined) setDetailTotal(rs.data.total);
+    setDetailLoading(false);
+  }
   // create / rename modals
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState("");
@@ -51,14 +77,6 @@ export default function TagsContent() {
     if (boot && boot.tags) { setTags(boot.tags); setLoading(false); }
     else load();
   }, []);
-
-  async function openDetail(tag: Tag) {
-    setDetail(tag);
-    setDetailLoading(true);
-    const rs = await call<{ snapshots: SnapshotSummary[] }>(`api/tags/${encodeURIComponent(tag.id)}/snapshots?limit=200`);
-    setDetailSnaps(rs.data?.snapshots || []);
-    setDetailLoading(false);
-  }
 
   async function createTag() {
     setCreateErr(null);
@@ -150,6 +168,14 @@ export default function TagsContent() {
         ) : (
           <p className={styles.hint}>No snapshots for this tag yet.</p>
         )}
+
+        {detailSnaps.length < detailTotal ? (
+          <div className={styles.moreBar}>
+            <Button variant="ghost" disabled={detailLoading} onClick={() => void loadMoreDetail()}>
+              {detailLoading ? <Spinner /> : `Load more (${detailSnaps.length}/${detailTotal})`}
+            </Button>
+          </div>
+        ) : null}
 
         {dialogs()}
       </div>
