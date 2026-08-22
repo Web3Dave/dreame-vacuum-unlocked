@@ -219,12 +219,19 @@ export default function MapContent() {
         ) : null}
       </header>
 
-      {isSpinning && !showMap ? (
-        <p className={styles.loading}><Spinner /> Loading map…</p>
-      ) : showMap ? (
+      {/* The canvas is ALWAYS mounted so canvasRef.current is bound and the
+          renderer can draw into it; visibility is toggled by state. If it were
+          mounted only after mapState==='ok', the first draw could never happen
+          (renderDoc needs the canvas, but the canvas only appears after a draw)
+          - a deadlock. Loading/empty messages overlay it. */}
+      <div className={styles.stage} hidden={showMap ? false : true}>
         <div className={styles.canvasWrap} style={{ width: "min-content" }}>
           <canvas ref={canvasRef} className={styles.canvas} />
         </div>
+      </div>
+
+      {!showMap && isSpinning ? (
+        <p className={styles.loading}><Spinner /> Loading map…</p>
       ) : showNoMap ? (
         <div className={styles.empty}>
           <p className={styles.err}>
