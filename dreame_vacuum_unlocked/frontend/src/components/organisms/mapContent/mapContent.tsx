@@ -226,14 +226,31 @@ export default function MapContent() {
       }
     };
 
+    // Tracks "is a map currently drawn on screen" independent of React state:
+    // ticks are chained via setTimeout, so a closure over `mapState` here
+    // would just be whatever it was when THIS effect was created, not the
+    // live value after earlier ticks' setMapState calls. Reset to false
+    // whenever the effect re-runs (new device, manual refresh), which is
+    // exactly when we DO want the loading UI back.
+    let hasMap = false;
+
     const tick = async () => {
       if (!alive || stopRetry) return;
-      setMapState("loading");
+      // Only show the loading UI for the initial fetch (or while recovering
+      // from a failed/no-map state) - once a map is up, a routine background
+      // poll should update it in place without hiding it behind a spinner.
+      if (!hasMap) setMapState("loading");
       const drawn = await fetchOnce(false);
       if (!alive) return;
       if (drawn) {
+        hasMap = true;
         setMapState("ok");
         timer = setTimeout(tick, 3000); // live follow
+      } else if (hasMap) {
+        // A map is already showing - one failed background poll (a transient
+        // blip) shouldn't yank it away. Keep showing the last good map and
+        // just retry; fetchOnce already recorded the error in `message`.
+        timer = setTimeout(tick, 3000);
       } else {
         // No map / error: stay in a "no map found - refresh" state but keep a
         // gentle retry so the map appears when the robot comes back online.
