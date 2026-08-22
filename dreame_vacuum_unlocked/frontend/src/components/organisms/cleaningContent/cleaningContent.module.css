@@ -1,0 +1,106 @@
+.wrap {
+  width: 100%;
+}
+
+.header {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+
+.h1 {
+  font-size: 20px;
+  margin: 0;
+  font-weight: 600;
+}
+
+.err {
+  color: var(--bad);
+  font-size: 13px;
+}
+
+.bar {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.modes {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.tab {
+  padding: 8px 18px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+}
+
+.tabOn {
+  color: var(--text);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.mapWrap {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: auto;
+  max-height: calc(100vh - 260px);
+}
+
+.canvas {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+.roomPane {
+  margin-top: 12px;
+}
+
+.roomList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.roomChip {
+  padding: 8px 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 500;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.roomChipOn {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+}
+
+.hint {
+  color: var(--muted);
+  font-size: 13px;
+  margin-top: 10px;
+}
+
+.cleanBar {
+  position: sticky;
+  bottom: 0;
+  padding: 12px 0;
+  background: var(--bg);
+}

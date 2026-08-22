@@ -6,6 +6,12 @@ import DevicesContent from "../devicesContent/devicesContent";
 import AudioContent from "../audioContent/audioContent";
 import TasksContent from "../tasksContent/tasksContent";
 import MapContent from "../mapContent/mapContent";
+import TagsContent from "../tagsContent/tagsContent";
+import ClassificationsContent from "../classificationsContent/classificationsContent";
+import ActivityContent from "../activityContent/activityContent";
+import ConfigContent from "../configContent/configContent";
+import VoiceContent from "../voiceContent/voiceContent";
+import CleaningContent from "../cleaningContent/cleaningContent";
 import LegacyTab from "./legacyTab/legacyTab";
 import { readBase } from "../../../lib/api";
 import styles from "./appShell.module.css";
@@ -16,17 +22,16 @@ const REACT_TABS: Record<string, React.ComponentType> = {
   audio: AudioContent,
   tasks: TasksContent,
   maps: MapContent,
+  tags: TagsContent,
+  classifications: ClassificationsContent,
+  activity: ActivityContent,
+  config: ConfigContent,
+  voice: VoiceContent,
+  cleaning: CleaningContent,
 };
 
 /** Route paths that are NOT yet ported; shown via an iframe to the Jinja page. */
-const LEGACY_TABS: Record<string, string> = {
-  tags: "tags",
-  classifications: "classifications",
-  cleaning: "cleaning",
-  activity: "activity",
-  config: "config",
-  voice: "voice",
-};
+const LEGACY_TABS: Record<string, string> = {};
 
 function activeTab(): string {
   // URL hash holds the tab, e.g. "#/tasks" (or "#" empty = devices).

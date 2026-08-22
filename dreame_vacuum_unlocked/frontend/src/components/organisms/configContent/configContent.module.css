@@ -1,0 +1,35 @@
+.wrap {
+  width: 100%;
+}
+
+.header {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+
+.h1 {
+  font-size: 20px;
+  margin: 0;
+  font-weight: 600;
+}
+
+.editor {
+  width: 100%;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  resize: vertical;
+}
+
+.bar {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}

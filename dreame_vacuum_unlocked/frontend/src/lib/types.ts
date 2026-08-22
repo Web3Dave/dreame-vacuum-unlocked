@@ -63,6 +63,74 @@ export interface TasksPayload {
   step_types: Record<string, StepTypeSpec>;
 }
 
+/* ---- Task editor ---- */
+export interface TaskEditorData {
+  task?: Task | null;
+  devices: { did: string; name: string }[];
+  step_types: Record<string, StepTypeSpec>;
+  classifiers: Classifier[];
+  audio_files: string[];
+  map_doc?: Record<string, unknown> | null;
+}
+
+/* ---- Camera / monitor ---- */
+export interface MonitorSnapshot {
+  filename: string;
+  name?: string;
+  timestamp?: number;
+}
+
+/* ---- Tags ---- */
+export interface Tag {
+  id: string;
+  name: string;
+  count?: number;
+  snapshots?: SnapshotSummary[];
+  classifications?: { id: string; name: string }[];
+}
+
+export interface SnapshotSummary {
+  filename: string;
+  size?: number;
+  ts?: number;
+  has_results?: boolean;
+}
+
+export interface TagsOverviewPayload {
+  tags: Tag[];
+}
+
+export interface Classifier {
+  id: string;
+  name: string;
+  enabled: boolean;
+  classification_type?: string | null;
+  classes: string[];
+  threshold: number;
+  tags: { tag_id: string; crop?: number[] }[];
+  can_train?: boolean;
+  train_status?: string;
+  [key: string]: unknown;
+}
+
+export interface ClassificationsPayload {
+  classifications: Classifier[];
+  tags: Tag[];
+}
+
+/* ---- Activity ---- */
+export interface Run {
+  id?: string;
+  slug?: string;
+  task?: string;
+  did?: string;
+  started?: number;
+  finished?: number;
+  status?: string;
+  detail?: string;
+  run_id?: string;
+}
+
 /* ---- Audio ---- */
 export interface AudioPayload {
   files: string[];

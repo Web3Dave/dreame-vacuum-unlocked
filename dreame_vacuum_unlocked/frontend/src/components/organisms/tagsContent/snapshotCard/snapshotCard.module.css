@@ -1,0 +1,87 @@
+.card {
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--card);
+  display: flex;
+  flex-direction: column;
+}
+
+.thumb {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  background: #111;
+  overflow: hidden;
+}
+
+.media {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.menuAnchor {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+}
+
+.dots {
+  border: none;
+  background: rgba(20, 20, 20, 0.55);
+  color: #fff;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.dots:hover {
+  background: rgba(20, 20, 20, 0.75);
+}
+
+.caption {
+  padding: 6px 8px;
+  font-size: 11px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Popover layer content — position fixed / portaled, never clipped. */
+.menu {
+  min-width: 190px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+}
+
+.menu button,
+.menu .openLink {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  font-size: 13px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  border-radius: 6px;
+  cursor: pointer;
+  text-decoration: none;
+  font: inherit;
+}
+
+.menu button:hover,
+.menu .openLink:hover {
+  background: rgba(127, 127, 127, 0.12);
+}

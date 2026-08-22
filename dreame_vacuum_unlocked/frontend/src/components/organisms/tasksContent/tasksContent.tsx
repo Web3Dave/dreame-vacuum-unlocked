@@ -4,8 +4,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Button from "../../../components/atoms/button/button";
 import Modal from "../../../components/atoms/modal/modal";
 import TaskCard from "../../../components/organisms/taskCard/taskCard";
-import { call, readInlinedData, routeHref } from "../../../lib/api";
-import type { TasksPayload } from "../../../lib/types";
+import TaskEditor from "../../../components/organisms/taskEditor/taskEditor";
+import { call, readInlinedData } from "../../../lib/api";
+import type { Task, TasksPayload } from "../../../lib/types";
 import styles from "./tasksContent.module.css";
 
 export default function TasksContent() {
@@ -16,6 +17,8 @@ export default function TasksContent() {
   const [exportYaml, setExportYaml] = useState("");
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loadRef = useRef<() => void>(() => {});
+  // When set, the Task editor is shown in place of the list (SPA, no load).
+  const [editing, setEditing] = useState<{ task: Task | null; slug?: string } | null>(null);
 
   const applyData = useCallback((payload: TasksPayload) => {
     setData(payload);
@@ -41,8 +44,6 @@ export default function TasksContent() {
   }, [load]);
 
   useEffect(() => {
-    // Option 1: hydrate from the server-inlined bootstrap when present (no
-    // first-load fetch). Still arm polling if a task is running/busy.
     const boot = readInlinedData<TasksPayload>();
     if (boot && boot.tasks) {
       applyData(boot);
@@ -60,7 +61,6 @@ export default function TasksContent() {
       method: "POST",
       body: JSON.stringify({}),
     });
-    // The run may take minutes; re-poll straight away so the button reflects it.
     setTimeout(load, 800);
     if (!rs.ok && rs.data?.error) {
       alert(rs.data.error);
@@ -83,16 +83,26 @@ export default function TasksContent() {
     return yaml;
   }
 
+  // Editor mode: render TaskEditor in place; keep it mounted so the shell persists.
+  if (editing) {
+    const task = editing.task ?? data?.tasks.find((t) => t.slug === editing.slug) ?? null;
+    return (
+      <TaskEditor
+        task={task}
+        onSaved={() => { setEditing(null); load(); }}
+      />
+    );
+  }
+
   return (
     <>
-
       <header className={styles.header}>
         <h1 className={styles.h1}>Tasks</h1>
         <span className={styles.sub}>{data?.tasks.length ? `${data.tasks.length} task(s)` : ""}</span>
       </header>
 
       <div className={styles.bar}>
-        <Button variant="primary" onClick={() => (window.location.href = routeHref("tasks/new"))}>
+        <Button variant="primary" onClick={() => setEditing({ task: null })}>
           New task
         </Button>
       </div>
@@ -117,6 +127,7 @@ export default function TasksContent() {
             onRun={runTask}
             onDelete={deleteTask}
             onExport={exportTask}
+            onEdit={() => setEditing({ task: t, slug: t.slug })}
             busySlug={busySlug}
           />
         ))

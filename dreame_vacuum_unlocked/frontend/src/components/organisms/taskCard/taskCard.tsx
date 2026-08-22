@@ -14,10 +14,11 @@ interface TaskCardProps {
   onRun: (slug: string) => Promise<string | null>;
   onDelete: (slug: string) => void;
   onExport: (slug: string) => Promise<string | null>;
+  onEdit?: () => void;
   busySlug: string | null;
 }
 
-export default function TaskCard({ task, schema, onRun, onDelete, onExport, busySlug }: TaskCardProps) {
+export default function TaskCard({ task, schema, onRun, onDelete, onExport, onEdit, busySlug }: TaskCardProps) {
   const [exporting, setExporting] = useState(false);
   const run = runLabel(task);
   const activeStep = task.running ? task.progress?.step : undefined;
@@ -41,9 +42,7 @@ export default function TaskCard({ task, schema, onRun, onDelete, onExport, busy
           {isBusy ? <Spinner /> : null}
           {run.label}
         </Button>
-        <a href={routeHref(`tasks/${task.slug}/edit`)}>
-          <Button>Edit</Button>
-        </a>
+        <Button disabled={isBusy} onClick={onEdit}>Edit</Button>
         <Button disabled={isBusy} onClick={() => void onExport(task.slug)}>
           {exporting ? "Exporting…" : "Export"}
         </Button>

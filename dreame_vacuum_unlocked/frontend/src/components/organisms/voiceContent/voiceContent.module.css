@@ -1,0 +1,77 @@
+.wrap {
+  width: 100%;
+}
+
+.header {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+
+.h1 {
+  font-size: 20px;
+  margin: 0;
+  font-weight: 600;
+}
+
+.sub {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  justify-content: space-between;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+}
+
+.nameBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.nameBlock b {
+  font-size: 13px;
+}
+
+.id {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.audio {
+  font: inherit;
+  font-size: 13px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  max-width: 220px;
+}
+
+.bar {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.hint {
+  color: var(--muted);
+  font-size: 13px;
+}

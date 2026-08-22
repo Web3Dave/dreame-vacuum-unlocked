@@ -1,0 +1,112 @@
+.wrap {
+  width: 100%;
+}
+
+.header {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+
+.h1 {
+  font-size: 20px;
+  margin: 0;
+  font-weight: 600;
+}
+
+.sub {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.err {
+  color: var(--bad);
+  font-size: 13px;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.run {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+}
+
+.runHead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.pill {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.pillLive {
+  background: color-mix(in srgb, #03a9f4 18%, transparent);
+  color: #03a9f4;
+}
+
+.pillOk {
+  background: color-mix(in srgb, var(--ok) 15%, transparent);
+  color: var(--ok);
+}
+
+.pillBad {
+  background: color-mix(in srgb, var(--bad) 15%, transparent);
+  color: var(--bad);
+}
+
+.cmd {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.time {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.summary {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 8px 0 0;
+}
+
+.steps {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.stepItem {
+  margin: 2px 0;
+}
+
+.stepTime {
+  color: var(--muted);
+  font-size: 11px;
+  margin-right: 8px;
+}
+
+.empty {
+  text-align: center;
+  padding: 28px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+}
