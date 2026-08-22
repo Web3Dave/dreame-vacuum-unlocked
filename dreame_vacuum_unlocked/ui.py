@@ -285,11 +285,30 @@ def _rewrite_frontend_html(path):
 @app.route("/_next/<path:filename>")
 def frontend_next_asset(filename):
     """Serve Build's _next/static/* (CSS + JS chunks) under the ingress path.
+
     HA ingress strips the token, so the add-on receives /_next/... at its root;
-    despite the /ui/ routing, these are hosted at _FRONTEND_OUT/_next."""
+    despite the /ui/ routing, these are hosted at _FRONTEND_OUT/_next.
+
+    CRITICAL (webpack dynamic chunks / Next static export): the generated JS
+    bakes output.publicPath to the root-absolute `"/_next/"` (its runtime builds
+    every dynamic import() chunk URL as `publicPath + name`, e.g.
+    `\"/_next/\" + \"static/chunks/138-...js\"` -> /_next/static/chunks/138-...js,
+    which resolves to the HA ROOT and 404s - the app cannot intercept those
+    absolute-root requests). Fix (empirically verified): serve-time byte-rewrite
+    the `\"/_next/\"` literal in each .js file to `\"/<ingress_base>/_next/\"` so
+    webpack loads every dynamic chunk under the ingress prefix."""
     path = os.path.join(_FRONTEND_OUT, "_next", filename)
     if not os.path.isfile(path):
         abort(404)
+    base = _ingress_base()
+    if base and filename.endswith(".js"):
+        body = open(path, "rb").read()
+        marker = b'"/_next/"'
+        if marker in body:
+            new_marker = (base + "/_next/").encode()
+            body = body.replace(marker, b'"' + new_marker + b'"')
+            return Response(body, mimetype="application/javascript")
+        return send_from_directory(os.path.join(_FRONTEND_OUT, "_next"), filename)
     return send_from_directory(os.path.join(_FRONTEND_OUT, "_next"), filename)
 
 
