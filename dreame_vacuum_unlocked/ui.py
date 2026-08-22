@@ -20,7 +20,7 @@ import shutil
 import time
 
 
-from flask import Flask, abort, jsonify, redirect, render_template, request, send_file
+from flask import Flask, abort, jsonify, redirect, render_template, request, send_file, send_from_directory
 
 import ha_client
 import yaml
@@ -142,7 +142,9 @@ def index():
                         "attributes": st.get("attributes", {}),
                     }
 
-    return render_template(
+    # New React Devices page is a client component that fetches
+    # /api/devices-enriched itself; serve its static shell when built.
+    return _frontend_page("", lambda: render_template(
         "index.html",
         page="devices",
         devices=devices,
@@ -150,13 +152,84 @@ def index():
         viewer=_viewer(),
         base=_ingress_base(),
         routes=store.list_routes(),
-    )
+    ))
 
 
 @app.route("/api/devices")
 def api_devices():
     """Also useful for debugging the registration handshake."""
     return jsonify({"devices": store.list_devices()})
+
+
+@app.route("/api/devices-enriched")
+def api_devices_enriched():
+    """The Devices page ported to a static Next.js export fetches its data from
+    here (a static build cannot server-render live HA state). Mirrors what the
+    old index.html route enriched on the server: devices + live HA state."""
+    devices = store.list_devices()
+    ha_up = ha_client.available()
+    for dev in devices:
+        dev["state"] = {}
+        if ha_up:
+            for role, entity_id in (dev.get("entities") or {}).items():
+                st = ha_client.get_state(entity_id)
+                if st:
+                    dev["state"][role] = {
+                        "entity_id": entity_id,
+                        "state": st.get("state"),
+                        "attributes": st.get("attributes", {}),
+                    }
+    return jsonify({
+        "devices": devices,
+        "ha_up": ha_up,
+        "viewer": _viewer(),
+        "routes": len(store.list_routes()),
+    })
+
+
+# ---- Next.js static export serving ----
+# The new React UI (atomic design + CSS modules) builds with `next build`
+# (output: 'export') into frontend/out/ in the repo. The Dockerfile copies
+# that out/ into the package dir as `frontend/out/` at build time (build-time
+# Node only, no Node at runtime); Flask serves it here like any static site and
+# stays the JSON API backend.
+_FRONTEND_OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "frontend", "out")
+
+
+def _frontend_page(page: str, fallback_callable):
+    """Serve a ported React page from the built frontend when present, else run
+    the given fallback callable (the old Jinja render_template). Imported
+    gradually: each ported page's Flask route calls this with its Jinja
+    fallback, so the old UI keeps working until the build ships."""
+    index = os.path.join(_FRONTEND_OUT, page, "index.html")
+    if os.path.isfile(index):
+        return send_from_directory(_FRONTEND_OUT, os.path.join(page, "index.html"))
+    return fallback_callable()
+
+
+@app.route("/ui/")
+def frontend_index():
+    """Serve the Next static app at /ui/ (a reserved path - the old Jinja routes
+    and /api/* stay where they are). index.html lives at the out/ root."""
+    idx = os.path.join(_FRONTEND_OUT, "index.html")
+    if not os.path.isfile(idx):
+        return render_template("index.html", page="devices", devices=[], ha_up=False,
+                               viewer=_viewer(), base=_ingress_base(), routes=[])
+    return send_from_directory(_FRONTEND_OUT, "index.html")
+
+
+@app.route("/ui/<path:filename>")
+def frontend_asset(filename):
+    """Serve the built _next/ assets and any page routes (trailing-slash pages
+    resolve via their index.html). Falls back to the old UI if the build is absent."""
+    safe = os.path.join(_FRONTEND_OUT, filename)
+    if not os.path.isfile(safe):
+        idx = os.path.join(_FRONTEND_OUT, filename, "index.html")
+        if os.path.isfile(idx):
+            return send_from_directory(_FRONTEND_OUT, os.path.join(filename, "index.html"))
+        abort(404)
+    return send_from_directory(_FRONTEND_OUT, filename)
+
 
 
 @app.route("/api/routes")
@@ -229,8 +302,10 @@ def map_image(did):
 
 @app.route("/tasks")
 def tasks():
-    return render_template("tasks.html", base=_ingress_base(), viewer=_viewer(),
-                           page="tasks", addon_version=ADDON_VERSION)
+    return _frontend_page("tasks", lambda: render_template(
+        "tasks.html", base=_ingress_base(), viewer=_viewer(),
+        page="tasks", addon_version=ADDON_VERSION
+    ))
 
 
 @app.route("/tasks/new")
@@ -1099,9 +1174,9 @@ def voice_page():
 @app.route("/audio")
 def audio_page():
     """Upload / manage the mp3 clips that can be mapped into the custom voice pack."""
-    return render_template(
+    return _frontend_page("audio", lambda: render_template(
         "audio.html", base=_ingress_base(), viewer=_viewer(), page="audio"
-    )
+    ))
 
 
 AUDIO_EXTS = (".mp3",)

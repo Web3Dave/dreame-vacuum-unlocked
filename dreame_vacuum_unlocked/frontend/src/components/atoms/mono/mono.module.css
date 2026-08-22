@@ -1,0 +1,7 @@
+.mono {
+  background: rgba(127, 127, 127, 0.14);
+  padding: 1px 5px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}

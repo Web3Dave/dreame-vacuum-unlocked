@@ -69,6 +69,10 @@ COPY steps.py .
 COPY ha_client.py .
 COPY ui.py .
 COPY voice_mappings.json .
+# Prebuilt React UI (atomic design + CSS modules). Built SEPARATELY (run
+# `npm install && npm run build` in frontend/ committing frontend/out/) so the
+# add-on image needs NO Node at build/runtime - this is just static assets.
+COPY frontend/out/ frontend/out/
 COPY templates/ templates/
 COPY run.sh .
 COPY mediamtx.yml .

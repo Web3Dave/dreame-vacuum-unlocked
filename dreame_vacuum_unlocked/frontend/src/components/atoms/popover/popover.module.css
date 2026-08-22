@@ -1,0 +1,39 @@
+.anchor {
+  display: inline-flex;
+  align-items: center;
+}
+
+/**
+ * Fixed layer + maximum z-index: always on top of whatever it floats over,
+ * never clipped. Position values are applied inline from the trigger rect.
+ */
+.layer {
+  position: fixed;
+  z-index: 9999;
+  min-width: 190px;
+  padding: 4px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
+}
+
+.layer :global(button),
+.layer :global(a) {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  font-size: 13.5px;
+  color: var(--text);
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.layer :global(button:hover),
+.layer :global(a:hover) {
+  background: rgba(127, 127, 127, 0.12);
+}

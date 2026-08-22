@@ -1,0 +1,16 @@
+.status {
+  margin-top: 12px;
+  font-size: 13px;
+}
+
+.ok {
+  color: var(--ok);
+}
+
+.err {
+  color: var(--bad);
+}
+
+.info {
+  color: var(--muted);
+}

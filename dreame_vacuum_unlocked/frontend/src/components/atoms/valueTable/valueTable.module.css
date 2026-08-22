@@ -1,0 +1,22 @@
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: var(--space-3);
+  font-size: 13px;
+}
+
+.table td {
+  padding: 5px 0;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+
+.table td:first-child {
+  color: var(--muted);
+  width: 38%;
+}
+
+.table td:last-child {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}

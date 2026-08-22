@@ -1,0 +1,5 @@
+# Dependencies & build artifacts. NOTE: frontend/out/ is NOT here - the
+# prebuilt static export is committed to the repo (the add-on image copies it).
+node_modules/
+.next/
+npm-debug.log*
