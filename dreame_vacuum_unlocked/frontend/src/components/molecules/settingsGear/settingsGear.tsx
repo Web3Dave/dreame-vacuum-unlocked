@@ -1,7 +1,7 @@
 "use client";
 
 import Popover from "../../../components/atoms/popover/popover";
-import { readBase, routeHref } from "../../../lib/api";
+import { hashHref } from "../../../lib/api";
 import styles from "./settingsGear.module.css";
 
 const MENU: { path: string; label: string }[] = [
@@ -11,7 +11,6 @@ const MENU: { path: string; label: string }[] = [
 ];
 
 export default function SettingsGear() {
-  const base = readBase();
   return (
     <div className={styles.menu}>
       <Popover
@@ -26,10 +25,19 @@ export default function SettingsGear() {
           </button>
         )}
       >
-        {() => (
+        {(close) => (
           <>
             {MENU.map((item) => (
-              <a key={item.path} href={routeHref(base, item.path)} role="menuitem">
+              <a
+                key={item.path}
+                href={hashHref(item.path)}
+                role="menuitem"
+                onClick={(e) => {
+                  e.preventDefault();
+                  close();
+                  window.location.hash = hashHref(item.path).replace(/^#/, "");
+                }}
+              >
                 {item.label}
               </a>
             ))}

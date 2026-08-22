@@ -96,3 +96,15 @@ export function routeHref(path: string, base?: string): string {
   if (!path) return `${root}/`; // home
   return `${root}/${path}`;
 }
+
+/**
+ * Build an SPA hash link for a tab: `#/tasks` (home = `#/`). Pure hash anchors
+ * resolve against the current document (already at the ingress-rooted URL), so
+ * they work under any ingress mount with no reload and no base-prefix coupling.
+ * The AppShell reads the hash to swap content; React tabs render in place, the
+ * shell stays mounted.
+ */
+export function hashHref(path: string, _base?: string): string {
+  if (!path) return "#/";
+  return `#/${path}`;
+}

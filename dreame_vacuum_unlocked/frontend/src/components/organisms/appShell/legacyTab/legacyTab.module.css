@@ -1,0 +1,17 @@
+.wrap {
+  /* The iframe fills the content area so the legacy Jinja page behaves like a
+     native tab (it scrolls internally, not the shell). */
+  height: calc(100vh - 140px);
+  min-height: 480px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.frame {
+  width: 100%;
+  height: 100%;
+  border: none;
+  background: var(--bg);
+}

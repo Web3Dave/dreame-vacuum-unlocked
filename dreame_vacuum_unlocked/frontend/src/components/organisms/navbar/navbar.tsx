@@ -1,7 +1,7 @@
 import Link from "next/link";
 import NavItem from "../../../components/molecules/navItem/navItem";
 import SettingsGear from "../../../components/molecules/settingsGear/settingsGear";
-import { readBase, routeHref } from "../../../lib/api";
+import { hashHref } from "../../../lib/api";
 import styles from "./navbar.module.css";
 
 export interface NavSection {
@@ -22,11 +22,10 @@ const SECTIONS: NavSection[] = [
 ];
 
 export default function NavBar({ active }: { active?: string }) {
-  const base = readBase();
   return (
     <nav className={styles.nav}>
       {SECTIONS.map((s) => (
-        <NavItem key={s.page} href={routeHref(s.path, base)} label={s.label} active={active === s.page} />
+        <NavItem key={s.page} href={hashHref(s.path)} label={s.label} active={active === s.page} />
       ))}
       <SettingsGear />
     </nav>
@@ -36,7 +35,7 @@ export default function NavBar({ active }: { active?: string }) {
 /** Home anchor — kept separate so it can point at the index route. */
 export function HomeLink() {
   return (
-    <Link href={routeHref("", readBase())} className={styles.home}>
+    <Link href={hashHref("")} className={styles.home}>
       Dreame Companion
     </Link>
   );

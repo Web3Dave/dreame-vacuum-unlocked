@@ -1,15 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import Button from "../../components/atoms/button/button";
-import Modal from "../../components/atoms/modal/modal";
-import NavBar from "../../components/organisms/navbar/navbar";
-import TaskCard from "../../components/organisms/taskCard/taskCard";
-import { call, readInlinedData, routeHref } from "../../lib/api";
-import type { TasksPayload } from "../../lib/types";
-import styles from "./page.module.css";
+import Button from "../../../components/atoms/button/button";
+import Modal from "../../../components/atoms/modal/modal";
+import TaskCard from "../../../components/organisms/taskCard/taskCard";
+import { call, readInlinedData, routeHref } from "../../../lib/api";
+import type { TasksPayload } from "../../../lib/types";
+import styles from "./tasksContent.module.css";
 
-export default function TasksPage() {
+export default function TasksContent() {
   const [data, setData] = useState<TasksPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busySlug, setBusySlug] = useState<string | null>(null);
@@ -85,8 +84,7 @@ export default function TasksPage() {
   }
 
   return (
-    <main>
-      <NavBar active="tasks" />
+    <>
 
       <header className={styles.header}>
         <h1 className={styles.h1}>Tasks</h1>
@@ -148,6 +146,6 @@ export default function TasksPage() {
         </p>
         <pre className={styles.export}>{exportYaml}</pre>
       </Modal>
-    </main>
+    </>
   );
 }

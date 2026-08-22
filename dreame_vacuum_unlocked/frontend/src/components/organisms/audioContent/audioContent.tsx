@@ -1,13 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import Button from "../../components/atoms/button/button";
-import Select from "../../components/atoms/select/select";
-import Spinner from "../../components/atoms/spinner/spinner";
-import NavBar from "../../components/organisms/navbar/navbar";
-import StatusMessage from "../../components/molecules/statusMessage/statusMessage";
-import { readInlinedData, apiUrl, call, callFormData } from "../../lib/api";
-import styles from "./page.module.css";
+import Button from "../../../components/atoms/button/button";
+import Select from "../../../components/atoms/select/select";
+import Spinner from "../../../components/atoms/spinner/spinner";
+import StatusMessage from "../../../components/molecules/statusMessage/statusMessage";
+import { readInlinedData, apiUrl, call, callFormData } from "../../../lib/api";
+import styles from "./audioContent.module.css";
 
 /** Shape of the server-inlined initial data (matches ui.py _audio_payload). */
 interface AudioBootstrap {
@@ -15,7 +14,7 @@ interface AudioBootstrap {
   devices?: { did: string; name?: string }[];
 }
 
-export default function AudioPage() {
+export default function AudioContent() {
   const [files, setFiles] = useState<string[]>([]);
   const [devices, setDevices] = useState<{ did: string; name: string }[]>([]);
   const [did, setDid] = useState("");
@@ -106,8 +105,7 @@ export default function AudioPage() {
   }
 
   return (
-    <main>
-      <NavBar active="audio" />
+    <>
 
       <header className={styles.header}>
         <h1 className={styles.h1}>Audio</h1>
@@ -153,6 +151,6 @@ export default function AudioPage() {
       </div>
 
       <StatusMessage tone={status?.tone || "info"}>{status?.text}</StatusMessage>
-    </main>
+    </>
   );
 }

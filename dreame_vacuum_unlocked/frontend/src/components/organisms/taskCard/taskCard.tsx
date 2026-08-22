@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Button from "../../../components/atoms/button/button";
 import Spinner from "../../../components/atoms/spinner/spinner";
-import { routeHref } from "../../../lib/api";
+import { routeHref, hashHref } from "../../../lib/api";
 import { describeStep, runLabel } from "../../../lib/tasks";
 import type { StepTypeSpec, Task } from "../../../lib/types";
 import styles from "./taskCard.module.css";
@@ -69,7 +69,15 @@ export default function TaskCard({ task, schema, onRun, onDelete, onExport, busy
         <p className={styles.hint}>
           Run {task.progress.run_id}
           {task.progress.detail ? ` · ${task.progress.detail}` : ""} ·{" "}
-          <a href={routeHref("activity")}>follow in Activity</a>
+          <a
+            href={hashHref("activity")}
+            onClick={(e) => {
+              e.preventDefault();
+              window.location.hash = hashHref("activity").split("#")[1] || "";
+            }}
+          >
+            follow in Activity
+          </a>
         </p>
       ) : null}
     </div>
