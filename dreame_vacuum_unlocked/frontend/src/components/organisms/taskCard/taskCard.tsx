@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Button from "../../../components/atoms/button/button";
 import Spinner from "../../../components/atoms/spinner/spinner";
+import { routeHref } from "../../../lib/api";
 import { describeStep, runLabel } from "../../../lib/tasks";
 import type { StepTypeSpec, Task } from "../../../lib/types";
 import styles from "./taskCard.module.css";
@@ -40,7 +41,7 @@ export default function TaskCard({ task, schema, onRun, onDelete, onExport, busy
           {isBusy ? <Spinner /> : null}
           {run.label}
         </Button>
-        <a href={`tasks/${task.slug}/edit`}>
+        <a href={routeHref(`tasks/${task.slug}/edit`)}>
           <Button>Edit</Button>
         </a>
         <Button disabled={isBusy} onClick={() => void onExport(task.slug)}>
@@ -68,7 +69,7 @@ export default function TaskCard({ task, schema, onRun, onDelete, onExport, busy
         <p className={styles.hint}>
           Run {task.progress.run_id}
           {task.progress.detail ? ` · ${task.progress.detail}` : ""} ·{" "}
-          <a href="activity">follow in Activity</a>
+          <a href={routeHref("activity")}>follow in Activity</a>
         </p>
       ) : null}
     </div>

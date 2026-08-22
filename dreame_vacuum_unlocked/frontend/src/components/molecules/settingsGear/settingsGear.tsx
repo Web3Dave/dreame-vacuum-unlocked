@@ -1,16 +1,17 @@
 "use client";
 
-import Link from "next/link";
 import Popover from "../../../components/atoms/popover/popover";
+import { readBase, routeHref } from "../../../lib/api";
 import styles from "./settingsGear.module.css";
 
-const MENU: { href: string; label: string }[] = [
-  { href: "config", label: "Config" },
-  { href: "voice", label: "Custom voice" },
-  { href: "audio", label: "Audio" },
+const MENU: { path: string; label: string }[] = [
+  { path: "config", label: "Config" },
+  { path: "voice", label: "Custom voice" },
+  { path: "audio", label: "Audio" },
 ];
 
 export default function SettingsGear() {
+  const base = readBase();
   return (
     <div className={styles.menu}>
       <Popover
@@ -28,9 +29,9 @@ export default function SettingsGear() {
         {() => (
           <>
             {MENU.map((item) => (
-              <Link key={item.href} href={item.href} role="menuitem">
+              <a key={item.path} href={routeHref(base, item.path)} role="menuitem">
                 {item.label}
-              </Link>
+              </a>
             ))}
           </>
         )}

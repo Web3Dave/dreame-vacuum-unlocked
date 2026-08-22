@@ -70,3 +70,29 @@ export function readInlinedData<T = unknown>(): T | null {
   }
   return null;
 }
+
+/**
+ * The HA ingress base path, inlined as window.__BASE__ by Flask, e.g.
+ * "/api/hassio_ingress/<id>", or "" when not served under ingress. Nav links
+ * and any "jump to a page" URLs must be built from this (with a leading slash)
+ * so they resolve against the app ROOT, not relative to the current page route.
+ */
+export function readBase(): string {
+  if (typeof window !== "undefined") {
+    return (window as unknown as { __BASE__?: string }).__BASE__ ?? "";
+  }
+  return "";
+}
+
+/**
+ * Build a nav link / "jump to page" URL that resolves against the APP ROOT from
+ * any page, even under HA ingress. Using `{base}/tasks` (leading slash) rather
+ * than a bare relative `tasks` means navigating from /tasks/tags still lands on
+ * the root's /tasks, not /tasks/tasks. `base` is read via readBase() (or passed
+ * in for reuse). Devices/home uses an empty `path`.
+ */
+export function routeHref(path: string, base?: string): string {
+  const root = base ?? readBase();
+  if (!path) return `${root}/`; // home
+  return `${root}/${path}`;
+}

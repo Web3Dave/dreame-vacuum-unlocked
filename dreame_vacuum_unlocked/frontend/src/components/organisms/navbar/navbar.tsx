@@ -1,29 +1,32 @@
 import Link from "next/link";
 import NavItem from "../../../components/molecules/navItem/navItem";
 import SettingsGear from "../../../components/molecules/settingsGear/settingsGear";
+import { readBase, routeHref } from "../../../lib/api";
 import styles from "./navbar.module.css";
 
 export interface NavSection {
-  href: string;
+  /** path relative to the app root (e.g. "tasks", "" for home) */
+  path: string;
   label: string;
   page: string;
 }
 
 const SECTIONS: NavSection[] = [
-  { href: "", label: "Devices", page: "devices" },
-  { href: "tasks", label: "Tasks", page: "tasks" },
-  { href: "tags", label: "Tags", page: "tags" },
-  { href: "classifications", label: "Classifications", page: "classifications" },
-  { href: "cleaning", label: "Cleaning", page: "cleaning" },
-  { href: "maps", label: "Maps", page: "maps" },
-  { href: "activity", label: "Activity", page: "activity" },
+  { path: "", label: "Devices", page: "devices" },
+  { path: "tasks", label: "Tasks", page: "tasks" },
+  { path: "tags", label: "Tags", page: "tags" },
+  { path: "classifications", label: "Classifications", page: "classifications" },
+  { path: "cleaning", label: "Cleaning", page: "cleaning" },
+  { path: "maps", label: "Maps", page: "maps" },
+  { path: "activity", label: "Activity", page: "activity" },
 ];
 
 export default function NavBar({ active }: { active?: string }) {
+  const base = readBase();
   return (
     <nav className={styles.nav}>
       {SECTIONS.map((s) => (
-        <NavItem key={s.page} href={s.href} label={s.label} active={active === s.page} />
+        <NavItem key={s.page} href={routeHref(s.path, base)} label={s.label} active={active === s.page} />
       ))}
       <SettingsGear />
     </nav>
@@ -33,7 +36,7 @@ export default function NavBar({ active }: { active?: string }) {
 /** Home anchor — kept separate so it can point at the index route. */
 export function HomeLink() {
   return (
-    <Link href="" className={styles.home}>
+    <Link href={routeHref("", readBase())} className={styles.home}>
       Dreame Companion
     </Link>
   );

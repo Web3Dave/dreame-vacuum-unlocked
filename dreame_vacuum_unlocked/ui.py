@@ -215,21 +215,25 @@ def _frontend_page(page: str, fallback_callable, data_provider=None):
     if not os.path.isfile(index):
         return fallback_callable()
     html = _rewrite_frontend_html(index)
-    if data_provider is not None:
-        data = data_provider()
-        if data is not None:
-            html = _inject_page_data(html, data)
+    data = data_provider() if data_provider is not None else None
+    html = _inject_page_data(html, data if data is not None else {}, base=_ingress_base())
     return Response(html, mimetype="text/html")
 
 
-def _inject_page_data(html: str, data: dict) -> str:
-    """Inline a JSON blob as window.__DATA__ into the served HTML so the React
-    layer reads initial state synchronously (no first-load fetch). Safely
-    escapes the JSON for a <script> context."""
+def _inject_page_data(html: str, data: dict, base: str = "") -> str:
+    """Inline the ingress base + initial JSON as globals into the served HTML.
+
+    - `window.__BASE__` = the HA ingress path prefix (e.g. /api/hassio_ingress/<id>)
+      or "" when not served under ingress. Nav links build from this so they
+      always point at the app root, working from any page.
+    - `window.__DATA__` = the page's initial data (Option 1 hot first load).
+
+    Safely escapes the JSON for a <script> context."""
     blob = json.dumps(data).replace("</", "<\\u002f")
+    base_js = json.dumps(base)
+    tag = f'<script>window.__BASE__={base_js};window.__DATA__={blob};</script>'
     # Inject right after <head> so it's present before any module script runs.
     head_marker = "<head>"
-    tag = f'<script>window.__DATA__={blob};</script>'
     if head_marker in html:
         return html.replace(head_marker, head_marker + tag, 1)
     return tag + html

@@ -5,7 +5,7 @@ import Button from "../../components/atoms/button/button";
 import Modal from "../../components/atoms/modal/modal";
 import NavBar from "../../components/organisms/navbar/navbar";
 import TaskCard from "../../components/organisms/taskCard/taskCard";
-import { call, readInlinedData } from "../../lib/api";
+import { call, readInlinedData, routeHref } from "../../lib/api";
 import type { TasksPayload } from "../../lib/types";
 import styles from "./page.module.css";
 
@@ -94,7 +94,7 @@ export default function TasksPage() {
       </header>
 
       <div className={styles.bar}>
-        <Button variant="primary" onClick={() => (window.location.href = "tasks/new")}>
+        <Button variant="primary" onClick={() => (window.location.href = routeHref("tasks/new"))}>
           New task
         </Button>
       </div>
