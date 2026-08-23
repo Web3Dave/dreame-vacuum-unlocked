@@ -13,9 +13,15 @@ route editing goes here next.
 from __future__ import annotations
 
 import json
+import os
+import io
+
+try:
+    from PIL import Image
+except Exception:  # Pillow is a declared dependency; degrade to no-thumb if absent
+    Image = None
 import logging
 import hashlib
-import os
 import re
 import shutil
 import time
@@ -1153,6 +1159,37 @@ def api_delete_tag(tag_id):
     return jsonify({"success": True})
 
 
+_THUMB_CACHE: dict = {}
+
+
+def _thumb_cache(path: str, width: int):
+    """Return a (≤width)-wide JPEG thumbnail of `path` as bytes, or None.
+
+    Cached by (path, width) with an mtime guard so a re-shared snapshot (same
+    filename) isn't served stale. Only called with width>0 and Pillow present.
+    """
+    try:
+        mtime = os.path.getmtime(path)
+    except OSError:
+        return None
+    key = (path, width)
+    hit = _THUMB_CACHE.get(key)
+    if hit and hit[0] == mtime:
+        return hit[1]
+    try:
+        im = Image.open(path)
+        im.thumbnail((width, width * 4), Image.LANCZOS)
+        buf = io.BytesIO()
+        im.convert("RGB").save(buf, "JPEG", quality=78)
+        data = buf.getvalue()
+    except Exception:
+        return None
+    if len(_THUMB_CACHE) > 256:
+        _THUMB_CACHE.clear()
+    _THUMB_CACHE[key] = (mtime, data)
+    return data
+
+
 @app.route("/snapshot/<tag>/<filename>")
 def snapshot_image(tag, filename):
     """Media served through Ingress, so Home Assistant has already
@@ -1161,6 +1198,12 @@ def snapshot_image(tag, filename):
     Both the per-tag photos (.jpg) and the recorded clips (.mp4) come from
     the same folder, so one route serves either. send_file streams ranges, so
     <video> playback and scrubbing work without the whole file loading.
+
+    For photos, an optional `?w=<px>` resizes to a small thumbnail on the fly
+    (Pillow, which the add-on already depends on) so a grid of many snapshots
+    transfers and decodes tiny files instead of the full-size JPEG - the
+    difference between a responsive Tags grid and one that janks a phone.
+    Results are cached by (path, width) so repeat loads are instant.
     """
     safe = os.path.basename(filename)
     lower = safe.lower()
@@ -1169,8 +1212,18 @@ def snapshot_image(tag, filename):
     path = os.path.join(SNAPSHOT_ROOT, _safe_tag(tag), safe)
     if not os.path.exists(path):
         abort(404)
-    mimetype = "video/mp4" if lower.endswith(".mp4") else "image/jpeg"
-    return send_file(path, mimetype=mimetype)
+    if lower.endswith(".mp4"):
+        return send_file(path, mimetype="video/mp4")
+    # photo - honour an optional thumbnail width
+    try:
+        width = int(request.args.get("w", 0))
+    except (TypeError, ValueError):
+        width = 0
+    if width > 0 and Image is not None:
+        data = _thumb_cache(path, width)
+        if data is not None:
+            return Response(data, mimetype="image/jpeg", headers={"Cache-Control": "private, max-age=86400"})
+    return send_file(path, mimetype="image/jpeg")
 
 
 @app.route("/activity")

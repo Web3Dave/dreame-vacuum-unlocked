@@ -204,7 +204,7 @@ export default function TagsContent() {
                 <span className={styles.tagName}>{t.name}</span>
                 <span className={styles.tagCount}>{t.count ?? 0}</span>
                 {t.snapshots && t.snapshots[0] ? (
-                  <img className={styles.tagThumb} src={apiUrl(`snapshot/${encodeURIComponent(t.id)}/${encodeURIComponent(t.snapshots[0].filename)}`)} alt={t.name} loading="lazy" />
+                  <img className={styles.tagThumb} src={`${apiUrl(`snapshot/${encodeURIComponent(t.id)}/${encodeURIComponent(t.snapshots[0].filename)}`)}${t.snapshots[0].kind === "video" || /\.(mp4|mkv|webm)$/i.test(t.snapshots[0].filename) ? "" : "?w=320"}`} alt={t.name} loading="lazy" decoding="async" />
                 ) : null}
               </button>
               <div className={styles.tagFoot}>

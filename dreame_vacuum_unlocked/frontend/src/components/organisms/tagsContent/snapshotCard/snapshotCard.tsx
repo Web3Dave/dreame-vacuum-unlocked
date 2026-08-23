@@ -21,7 +21,10 @@ interface SnapshotCardProps {
  */
 export default function SnapshotCard({ tag, snap, onClassify, onRerun, onViewResults }: SnapshotCardProps) {
   const isVideo = snap.kind === "video" || /\.(mp4|mkv|webm)$/i.test(snap.filename);
+  // Photos load a small server-side thumbnail (?w=) so a grid of many snapshots
+  // decodes tiny files; clips stay a static placeholder (never a <video> node).
   const src = apiUrl(`snapshot/${encodeURIComponent(tag)}/${encodeURIComponent(snap.filename)}`);
+  const thumbSrc = isVideo ? "" : `${src}?w=320`;
 
   return (
     <figure className={styles.card}>
@@ -39,7 +42,7 @@ export default function SnapshotCard({ tag, snap, onClassify, onRerun, onViewRes
             <span className={styles.typeBadge}>clip</span>
           </a>
         ) : (
-          <img className={styles.media} src={src} alt={snap.filename} loading="lazy" onClick={() => window.open(src, "_blank", "noopener")} />
+          <img className={styles.media} src={thumbSrc} alt={snap.filename} loading="lazy" decoding="async" onClick={() => window.open(src, "_blank", "noopener")} />
         )}
         <div className={styles.menuAnchor}>
           <Popover
