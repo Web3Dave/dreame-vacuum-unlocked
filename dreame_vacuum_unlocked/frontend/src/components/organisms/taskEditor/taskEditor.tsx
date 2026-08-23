@@ -359,20 +359,22 @@ function RoomsEditor({ did, rooms, onRooms }: { did: string; rooms: number[]; on
   // fetched from the same /api/maps/<did>/rooms endpoint the Maps tab uses.
   const [allNames, setAllNames] = useState<Record<string, string> | null>(null);
   const [mapId, setMapId] = useState<number | null>(null);
+  const [mapName, setMapName] = useState<string | null>(null);
   const [loadingRooms, setLoadingRooms] = useState(false);
   const [roomsErr, setRoomsErr] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
-    if (!did) { setAllNames(null); setMapId(null); return; }
+    if (!did) { setAllNames(null); setMapId(null); setMapName(null); return; }
     setLoadingRooms(true); setRoomsErr(null);
     (async () => {
       try {
-        const rs = await call<{ map_id?: number | null; rooms: Record<string, string> }>(`api/maps/${encodeURIComponent(did)}/rooms`);
+        const rs = await call<{ map_id?: number | null; map_name?: string | null; rooms: Record<string, string> }>(`api/maps/${encodeURIComponent(did)}/rooms`);
         if (!alive) return;
         if (rs.ok && rs.data) {
           setAllNames(rs.data.rooms || {});
           setMapId(rs.data.map_id ?? null);
+          setMapName(rs.data.map_name ?? null);
         } else {
           setRoomsErr((rs.data as any)?.error || "Could not load rooms");
         }
@@ -390,7 +392,7 @@ function RoomsEditor({ did, rooms, onRooms }: { did: string; rooms: number[]; on
 
   return (
     <div className={styles.fieldBlock}>
-      <span className={styles.fieldBlockLabel}>Rooms (in order) {mapId != null ? `· floor map ${mapId}` : ""}</span>
+      <span className={styles.fieldBlockLabel}>Rooms (in order) {mapId != null ? `· ${(mapName && mapName.trim()) ? mapName : `floor map ${mapId}`}` : ""}</span>
       {loadingRooms ? (
         <p className={styles.hint}><Spinner /> Loading rooms…</p>
       ) : roomsErr ? (

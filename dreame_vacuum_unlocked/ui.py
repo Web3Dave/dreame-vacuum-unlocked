@@ -660,7 +660,7 @@ def api_maps_rooms(did):
             rooms[str(seg)] = str(name)
         except Exception:  # noqa: BLE001 - one bad room must not lose the rest
             continue
-    return jsonify({"map_id": map_id, "rooms": rooms, "is_current": map_id == current_id})
+    return jsonify({"map_id": map_id, "map_name": ref.get("name"), "rooms": rooms, "is_current": map_id == current_id})
 
 
 @app.route("/api/classifications", methods=["POST"])

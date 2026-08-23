@@ -22,12 +22,17 @@ interface MapApi {
 }
 
 interface MapBackup { time: number; first: boolean; }
-interface MapEntry { id: number; is_current: boolean; backups: MapBackup[]; }
+interface MapEntry { id: number; name?: string | null; is_current: boolean; backups: MapBackup[]; }
 interface MapDevice { did: string; name: string; model?: string; }
 interface MapsData {
   current_map_id?: number | null;
   default_map_id?: string | null;
   maps: MapEntry[];
+}
+
+/** Floor display name: the app's name ("Floor 0") or a "Map N" fallback. */
+function mapLabel(m: { id: number; name?: string | null }): string {
+  return (m.name && m.name.trim()) ? m.name : `Map ${m.id}`;
 }
 
 type MapState = "idle" | "loading" | "no-map" | "ok" | "error";
@@ -273,7 +278,7 @@ export default function MapContent() {
                 <button key={m.id} type="button"
                   className={m.id === selectedMapId ? `${styles.mapTab} ${styles.mapTabOn}` : styles.mapTab}
                   onClick={() => { setSelectedMapId(m.id); setSubtab(m.is_current ? "current" : "backups"); resetBase(); setMapState("loading"); }}>
-                  Map {m.id}
+                  {mapLabel(m)}
                   {m.is_current ? <span className={styles.badge}>current</span> : null}
                   {isDef ? <span className={`${styles.badge} ${styles.badgeDefault}`}>default</span> : null}
                 </button>
@@ -288,7 +293,7 @@ export default function MapContent() {
 
           <div className={styles.mapHead}>
             <span className={styles.mapTitle}>
-              Map {selectedMap?.id}
+              {selectedMap ? mapLabel(selectedMap) : ""}
               {isCurrent ? " · current" : ""}
               {isDefaultFloor ? " · default" : ""}
             </span>
