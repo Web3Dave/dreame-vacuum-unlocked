@@ -294,7 +294,7 @@ export default function TaskEditor({ task, initialSlug, onSaved }: TaskEditorPro
           {/* selected step editor */}
           <div className={styles.main}>
             {selStep ? (
-              <StepEditor step={selStep} index={sel} schema={schema} classifiers={classifiers}
+              <StepEditor did={did} step={selStep} index={sel} schema={schema} classifiers={classifiers}
                 audioFiles={audioFiles} onPatch={(p) => updateStep(sel, p)} />
             ) : (
               <p className={styles.hint}>Select a step to edit its fields.</p>
@@ -314,7 +314,8 @@ export default function TaskEditor({ task, initialSlug, onSaved }: TaskEditorPro
   );
 }
 
-function StepEditor({ step, index, schema, classifiers, audioFiles, onPatch }: {
+function StepEditor({ did, step, index, schema, classifiers, audioFiles, onPatch }: {
+  did: string;
   step: TaskStep;
   index: number;
   schema: Record<string, StepTypeSpec>;
@@ -339,8 +340,7 @@ function StepEditor({ step, index, schema, classifiers, audioFiles, onPatch }: {
       ) : (
         <>
           {roomsField && (
-            <RoomsEditor rooms={(step.rooms as number[]) || []}
-              mapDoc={null}
+            <RoomsEditor did={did} rooms={(step.rooms as number[]) || []}
               onRooms={(rooms) => onPatch({ rooms })} />
           )}
           {otherFields.map((f) => (
@@ -353,15 +353,54 @@ function StepEditor({ step, index, schema, classifiers, audioFiles, onPatch }: {
   );
 }
 
-function RoomsEditor({ rooms, mapDoc, onRooms }: { rooms: number[]; mapDoc: Record<string, unknown> | null; onRooms: (r: number[]) => void }) {
-  // mapDoc may be null; without room names we still let the user type room ids
-  const allNames = (mapDoc?.room_names as Record<string, string>) || null;
+function RoomsEditor({ did, rooms, onRooms }: { did: string; rooms: number[]; onRooms: (r: number[]) => void }) {
+  // The clean step acts on the device's DEFAULT floor (or the current map if
+  // no default is set), so the pickable rooms are that floor's segment ids -
+  // fetched from the same /api/maps/<did>/rooms endpoint the Maps tab uses.
+  const [allNames, setAllNames] = useState<Record<string, string> | null>(null);
+  const [mapId, setMapId] = useState<number | null>(null);
+  const [loadingRooms, setLoadingRooms] = useState(false);
+  const [roomsErr, setRoomsErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    if (!did) { setAllNames(null); setMapId(null); return; }
+    setLoadingRooms(true); setRoomsErr(null);
+    (async () => {
+      try {
+        const rs = await call<{ map_id?: number | null; rooms: Record<string, string> }>(`api/maps/${encodeURIComponent(did)}/rooms`);
+        if (!alive) return;
+        if (rs.ok && rs.data) {
+          setAllNames(rs.data.rooms || {});
+          setMapId(rs.data.map_id ?? null);
+        } else {
+          setRoomsErr((rs.data as any)?.error || "Could not load rooms");
+        }
+      } catch (e) {
+        if (alive) setRoomsErr((e as Error).message || "Could not load rooms");
+      } finally {
+        if (alive) setLoadingRooms(false);
+      }
+    })();
+    return () => { alive = false; };
+  }, [did]);
+
   const all = allNames ? Object.keys(allNames).map(Number).filter((n) => !Number.isNaN(n)) : [];
   const [manual, setManual] = useState(rooms.join(", "));
+
   return (
     <div className={styles.fieldBlock}>
-      <span className={styles.fieldBlockLabel}>Rooms (in order)</span>
-      {all.length ? (
+      <span className={styles.fieldBlockLabel}>Rooms (in order) {mapId != null ? `· floor map ${mapId}` : ""}</span>
+      {loadingRooms ? (
+        <p className={styles.hint}><Spinner /> Loading rooms…</p>
+      ) : roomsErr ? (
+        <>
+          <p className={styles.hint}>{roomsErr} — enter room ids manually.</p>
+          <input value={manual} onChange={(e) => { setManual(e.target.value);
+            const nums = e.target.value.split(/[,\s]+/).filter(Boolean).map(Number).filter((n) => !Number.isNaN(n));
+            onRooms(nums); }} placeholder="1, 3, 5" />
+        </>
+      ) : all.length ? (
         <div className={styles.chips}>
           {all.map((r) => {
             const on = rooms.includes(r);
@@ -378,7 +417,7 @@ function RoomsEditor({ rooms, mapDoc, onRooms }: { rooms: number[]; mapDoc: Reco
           const nums = e.target.value.split(/[,\s]+/).filter(Boolean).map(Number).filter((n) => !Number.isNaN(n));
           onRooms(nums); }} placeholder="1, 3, 5" />
       )}
-      <p className={styles.hint}>{rooms.length ? `Order: ${rooms.join(" → ")}` : "Pick the rooms to clean."}</p>
+      <p className={styles.hint}>{rooms.length ? `Order: ${rooms.join(" → ")}` : "Pick the rooms to clean (this floor's rooms)."}</p>
     </div>
   );
 }

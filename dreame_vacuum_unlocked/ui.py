@@ -555,6 +555,10 @@ def api_maps_list(did):
     if result is None:
         return jsonify({"error": "Could not reach Home Assistant, or that "
                                   "vacuum is not registered yet"}), 502
+    result = dict(result)
+    # The saved "home" floor for this vacuum rides along so the Maps tab can
+    # mark it, without the client needing a second fetch.
+    result["default_map_id"] = config_store.get_default_map(did)
     return jsonify(result)
 
 
@@ -586,6 +590,77 @@ def api_maps_current(did):
         return jsonify({"error": "Could not reach Home Assistant, or no map "
                                   "is available for this vacuum yet"}), 502
     return jsonify(result)
+
+
+@app.route("/api/maps/<did>/default", methods=["GET", "PUT", "DELETE"])
+def api_maps_default(did):
+    """Get or set the saved "home" floor map for a device.
+
+    Dreame has no default-floor concept, so this is purely add-on config.
+    GET returns the stored id (possibly null); PUT stores `{map_id: N}`;
+    DELETE clears it.
+    """
+    if request.method == "GET":
+        return jsonify({"default_map_id": config_store.get_default_map(did)})
+    if request.method == "PUT":
+        body = request.get_json(silent=True) or {}
+        map_id = body.get("map_id")
+        saved = config_store.set_default_map(did, map_id)
+        return jsonify({"default_map_id": saved})
+    # DELETE
+    saved = config_store.set_default_map(did, None)
+    return jsonify({"default_map_id": saved})
+
+
+@app.route("/api/maps/<did>/rooms")
+def api_maps_rooms(did):
+    """The room list (segment id -> name) for the device's default floor.
+
+    Picks the "home" map the same way the Maps tab does: the saved default
+    floor if one is set, otherwise the currently-active map. The room ids
+    returned are that specific map's segment ids - the ones a clean_rooms
+    step stores - so a task editor that offers rooms here is offering rooms
+    that actually match the floor a clean step will act on. If the default
+    map isn't the active one, its newest backup is decoded for its layout
+    (a non-current floor has no live view, only backups).
+    """
+    listing = ha_client.get_api(f"/dreame_vacuum_unlocked_integration/maps/{did}")
+    if listing is None:
+        return jsonify({"error": "Could not reach Home Assistant, or that "
+                                  "vacuum is not registered yet"}), 502
+    maps = listing.get("maps") or []
+    if not maps:
+        return jsonify({"map_id": None, "rooms": {}})
+    current_id = listing.get("current_map_id")
+
+    # Choose the reference map: saved default, else current, else first.
+    default_id = config_store.get_default_map(did)
+    ref = None
+    if default_id is not None:
+        ref = next((m for m in maps if str(m["id"]) == str(default_id)), None)
+    if ref is None:
+        ref = next((m for m in maps if m["is_current"]), None) or maps[0]
+    map_id = ref["id"]
+
+    # Fetch that map's document: live if it's current, else its newest backup.
+    doc = None
+    if ref.get("is_current") or map_id == current_id:
+        doc = ha_client.get_api(f"/dreame_vacuum_unlocked_integration/map/{did}")
+    else:
+        newest = (ref.get("backups") or [None])[0]
+        if isinstance(newest, dict) and newest.get("time") is not None:
+            doc = ha_client.get_api(
+                f"/dreame_vacuum_unlocked_integration/maps/{did}/backup/{map_id}/{newest['time']}"
+            )
+    if doc is None:
+        return jsonify({"map_id": map_id, "rooms": {}})
+    rooms = {}
+    for seg, name in (doc.get("room_names") or {}).items():
+        try:
+            rooms[str(seg)] = str(name)
+        except Exception:  # noqa: BLE001 - one bad room must not lose the rest
+            continue
+    return jsonify({"map_id": map_id, "rooms": rooms, "is_current": map_id == current_id})
 
 
 @app.route("/api/classifications", methods=["POST"])

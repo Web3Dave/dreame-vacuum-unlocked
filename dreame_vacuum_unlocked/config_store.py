@@ -71,6 +71,10 @@ tasks: {}
 classifications: {}
 
 # Add-on-wide settings, not tied to any one classification.
+#   default_maps: { <did>: <map id> } - the floor to treat as home for a
+#   vacuum. Dreame has no "default floor" concept of its own, so this is
+#   stored here. The Maps tab's start view and a task's clean-step room list
+#   both use it.
 settings: {}
 """
 
@@ -282,6 +286,15 @@ def validate(data: dict) -> None:
                 f"settings.device: '{device}' is not available in this add-on "
                 f"yet. Supported: {', '.join(SUPPORTED_DEVICES)}"
             )
+        default_maps = settings.get("default_maps")
+        if default_maps is not None and not isinstance(default_maps, dict):
+            problems.append("settings.default_maps: must be a mapping of device id -> map id")
+        elif isinstance(default_maps, dict):
+            for did, mid in default_maps.items():
+                if not str(did or "").strip():
+                    problems.append("settings.default_maps: device id cannot be empty")
+                if mid is not None and not str(mid or "").strip():
+                    problems.append(f"settings.default_maps.{did}: map id cannot be empty")
 
     if problems:
         raise ConfigError("\n".join(problems))
@@ -599,6 +612,7 @@ def get_settings():
     return {
         "mobilenet_weights_path": settings.get("mobilenet_weights_path") or "",
         "device": settings.get("device") or "cpu",
+        "default_maps": _plain(settings.get("default_maps")) or {},
     }
 
 
@@ -615,6 +629,48 @@ def save_settings(mobilenet_weights_path, device=None):
         validate(candidate)
         _write(candidate)
     return get_settings()
+
+
+def get_default_map(did):
+    """The saved default floor-map id for a device, or None.
+
+    Dreame has no notion of a "default floor" - the vacuum only knows which
+    map is current at any moment and that can change as it moves between
+    floors. This is a genuine add-on setting: which floor the user wants the
+    pickers (Maps tab default view, task clean-step room list) to think of as
+    the home one.
+    """
+    default_maps = (load().get("settings") or {}).get("default_maps")
+    if not isinstance(default_maps, dict):
+        return None
+    return default_maps.get(str(did))
+
+
+def set_default_map(did, map_id):
+    """Remember `map_id` as the default floor for device `did`.
+
+    `map_id` may be a string or number; it is stored as a string. Passing a
+    falsy map_id clears the choice.
+    """
+    did = str(did or "").strip()
+    if not did:
+        return None
+    with _lock:
+        data = load()
+        candidate = copy.deepcopy(data)
+        section = candidate.get("settings")
+        if not isinstance(section, dict):
+            section = candidate["settings"] = {}
+        default_maps = section.get("default_maps")
+        if not isinstance(default_maps, dict):
+            default_maps = section["default_maps"] = {}
+        if map_id is None or str(map_id).strip() == "":
+            default_maps.pop(did, None)
+        else:
+            default_maps[did] = str(map_id).strip()
+        validate(candidate)
+        _write(candidate)
+    return get_default_map(did)
 
 
 # -- migration ------------------------------------------------------------

@@ -4,15 +4,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Select from "../../../components/atoms/select/select";
 import Button from "../../../components/atoms/button/button";
 import Spinner from "../../../components/atoms/spinner/spinner";
+import StatusMessage from "../../../components/molecules/statusMessage/statusMessage";
 import { call } from "../../../lib/api";
-import type { Device } from "../../../lib/types";
 import styles from "./mapContent.module.css";
 
 // The map renderer is owned by the **integration**, served by HA at
-// /dreame_vacuum_unlocked_integration/map.js (deliberate: the map stays with
-// the integration, the app just consumes it). We dynamically import it like the
-// legacy Jinja pages do, and drive its exports. Version trailer keeps the
-// browser from holding a stale cached copy.
+// /dreame_vacuum_unlocked_integration/map.js. We dynamically import it and
+// drive its exports, exactly like the legacy Jinja pages.
 const MAP_JS = "/dreame_vacuum_unlocked_integration/map.js?v=11";
 
 interface MapApi {
@@ -23,300 +21,408 @@ interface MapApi {
   loadSprites(): Promise<void>;
 }
 
+interface MapBackup { time: number; first: boolean; }
+interface MapEntry { id: number; is_current: boolean; backups: MapBackup[]; }
+interface MapDevice { did: string; name: string; model?: string; }
+interface MapsData {
+  current_map_id?: number | null;
+  default_map_id?: string | null;
+  maps: MapEntry[];
+}
+
+type MapState = "idle" | "loading" | "no-map" | "ok" | "error";
+
+/** Draw a decoded doc onto a canvas element (base + optional vacuum/dock). */
+function drawDoc(api: MapApi, canvas: HTMLCanvasElement, doc: Record<string, any>, showDev: boolean) {
+  const decoded = api.decodeMap(doc);
+  const scale = (doc as any).suggested_scale || 5;
+  canvas.width = decoded.cols * scale;
+  canvas.height = decoded.rows * scale;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  api.drawBase(ctx, decoded, { scale, showRoomNames: true });
+  if (showDev) {
+    if (decoded.dock) api.drawDock(ctx, decoded, { x: decoded.dock[0], y: decoded.dock[1], heading: decoded.dock_angle }, { scale });
+    if (decoded.robot) api.drawVacuum(ctx, decoded, { x: decoded.robot[0], y: decoded.robot[1], heading: decoded.angle }, { scale });
+  }
+}
+
 export default function MapContent() {
-  const [devices, setDevices] = useState<Device[]>([]);
+  const [devices, setDevices] = useState<MapDevice[]>([]);
   const [did, setDid] = useState("");
-  // Map lifecycle: 'loading' (fetch in flight) / 'no-map' (nothing to draw) /
-  // 'ok' (a map doc has rendered) / 'error' (couldn't reach HA/map renderer).
-  const [mapState, setMapState] = useState<"idle" | "loading" | "no-map" | "ok" | "error">("idle");
-  const [message, setMessage] = useState<string | null>(null);
-  const [devLoading, setDevLoading] = useState(true);
+  const [mapsData, setMapsData] = useState<MapsData | null>(null);
+  const [selectedMapId, setSelectedMapId] = useState<number | null>(null);
+  const [subtab, setSubtab] = useState<"current" | "backups">("current");
+  const [mapsLoading, setMapsLoading] = useState(false);
+  const [mapsError, setMapsError] = useState<string | null>(null);
+
+  const [mapState, setMapState] = useState<MapState>("idle");
+  const [liveError, setLiveError] = useState<string | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  // Cache the static base layer (rooms/walls/dock) so live robot draws don't
-  // ghost over it - redraw only when the map key changes.
   const baseRef = useRef<HTMLCanvasElement | null>(null);
   const baseKeyRef = useRef<string | null>(null);
   const mapApiRef = useRef<MapApi | null>(null);
-  const didRef = useRef(did);
-  // Manual refresh re-triggers the poll effect immediately with ?refresh=1.
-  const [refreshKey, setRefreshKey] = useState(0);
 
-  useEffect(() => { didRef.current = did; }, [did]);
+  // Backup view state, keyed by "mapId:time".
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [backupDocs, setBackupDocs] = useState<Record<string, Record<string, any>>>({});
+  const [backupBusy, setBackupBusy] = useState<Record<string, boolean>>({});
+  const [backupErr, setBackupErr] = useState<Record<string, string>>({});
+  const [backupShowDev, setBackupShowDev] = useState<Record<string, boolean>>({});
 
-  // Load device list once.
+  function resetBase() { baseRef.current = null; baseKeyRef.current = null; }
+
+  // Load the integration's map module once (race against a timeout).
   useEffect(() => {
     let alive = true;
-    (async () => {
-      try {
-        const rs = await call<{ devices: Device[] }>("api/devices");
-        if (!alive) return;
-        const devs = rs.data?.devices || [];
-        setDevices(devs);
-        if (devs.length) {
-          setDid((prev) => prev || devs[0].did);
-        } else {
-          setMapState("no-map");
-          setMessage("No devices registered. Install the dreame_vacuum_unlocked_integration integration.");
-        }
-      } catch (e) {
-        if (alive) {
-          setMapState("error");
-          setMessage((e as Error).message || "Could not load devices");
-        }
-      } finally {
-        if (alive) setDevLoading(false);
-      }
-    })();
-    return () => { alive = false; };
-  }, []);
-
-  // Load the integration's map module once. This is a genuine browser-native
-  // dynamic import() (webpackIgnore bypasses Next's bundler), fetching a
-  // cross-origin-ish absolute URL served by Home Assistant core, not by this
-  // app - a CSP block, a wrong MIME type, or the HA host being unreachable
-  // from inside an ingress iframe can all leave this promise neither
-  // resolving nor rejecting in some browsers, instead of throwing. Without a
-  // timeout that looks identical to "still loading" forever, which is
-  // indistinguishable from a slow network in the UI - so race it against one
-  // and surface *something* either way.
-  useEffect(() => {
-    let alive = true;
-    const timedOut = { current: false };
     const timer = setTimeout(() => {
-      timedOut.current = true;
       if (alive && !mapApiRef.current) {
-        console.error(`[mapContent] timed out loading ${MAP_JS} after 8s (no reject/resolve - `
-          + `check the Network tab for its request status and the Console for CSP errors)`);
         setMapState("error");
-        setMessage(
-          `Map renderer did not load (timed out fetching ${MAP_JS}). Check the browser console `
-          + "and Network tab - this is usually a blocked/failed request to Home Assistant, not the add-on."
-        );
+        setLiveError(`Map renderer did not load (timed out fetching ${MAP_JS}). Check the console and Network tab.`);
       }
     }, 8000);
-
     (async () => {
       try {
-        console.log(`[mapContent] loading map renderer from ${MAP_JS}`);
         const mod = await import(/* webpackIgnore: true */ MAP_JS);
         if (!alive) return;
         mapApiRef.current = mod as unknown as MapApi;
-        console.log("[mapContent] map renderer module loaded", mod);
         await (mod as unknown as MapApi).loadSprites();
-        console.log("[mapContent] sprites loaded");
-        if (alive && timedOut.current) {
-          // Recovered after the timeout already fired - clear the error so
-          // the next successful poll can show the map instead of being
-          // stuck behind a stale error state.
-          setMapState("loading");
-          setMessage(null);
-        }
+        if (alive) setMapState("loading");
       } catch (e) {
         console.error("[mapContent] failed to load map renderer:", e);
-        if (alive) {
-          setMapState("error");
-          setMessage("Map renderer unavailable: " + ((e as Error).message || String(e)));
-        }
+        if (alive) { setMapState("error"); setLiveError("Map renderer unavailable: " + ((e as Error).message || String(e))); }
       }
     })();
     return () => { alive = false; clearTimeout(timer); };
   }, []);
 
-  const renderDoc = useCallback(async (doc: Record<string, any>) => {
+  // Load devices once.
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const rs = await call<{ devices: MapDevice[] }>("api/maps/devices");
+        if (!alive) return;
+        const devs = rs.data?.devices || [];
+        setDevices(devs);
+        if (devs.length) setDid(devs[0].did);
+        else setMapsError("No devices registered. Install the integration.");
+      } catch (e) {
+        if (alive) setMapsError((e as Error).message || "Could not load devices");
+      }
+      setMapsLoading(false);
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  // Load the maps listing when the device changes.
+  useEffect(() => {
+    if (!did) return;
+    let alive = true;
+    (async () => {
+      setMapsLoading(true); setMapsError(null); setMapsData(null);
+      setSelectedMapId(null); setExpanded({}); setBackupDocs({}); setBackupErr({});
+      resetBase();
+      try {
+        const rs = await call<MapsData>(`api/maps/${encodeURIComponent(did)}`);
+        if (!alive) return;
+        if (!rs.ok || !rs.data) { setMapsError((rs.data as any)?.error || `Could not load maps (HTTP ${rs.status})`); return; }
+        const data = rs.data;
+        setMapsData(data);
+        const defNum = data.default_map_id ? Number(data.default_map_id) : NaN;
+        const byDefault = Number.isFinite(defNum) ? (data.maps || []).find((m) => m.id === defNum) : undefined;
+        const start = byDefault
+          || (data.maps || []).find((m) => m.is_current)
+          || (data.maps || [])[0];
+        setSelectedMapId(start ? start.id : null);
+        setSubtab(start && start.is_current ? "current" : "backups");
+      } catch (e) {
+        if (alive) setMapsError((e as Error).message || "Could not load maps");
+      } finally {
+        if (alive) setMapsLoading(false);
+      }
+    })();
+    return () => { alive = false; };
+  }, [did]);
+
+  const selectedMap = mapsData?.maps.find((m) => m.id === selectedMapId) ?? null;
+  const isCurrent = !!selectedMap?.is_current;
+
+  // Render the live current map.
+  const renderLiveDoc = useCallback(async (doc: Record<string, any>) => {
     const canvas = canvasRef.current;
     const api = mapApiRef.current;
-    if (!canvas) {
-      console.warn("[mapContent] renderDoc: no canvas ref yet");
-      return false;
-    }
-    if (!api) {
-      console.warn("[mapContent] renderDoc: map renderer not loaded yet");
-      return false; // map.js still loading; caller retries
-    }
+    if (!canvas || !api) return false;
     const ctx = canvas.getContext("2d");
-    if (!ctx) {
-      console.warn("[mapContent] renderDoc: canvas 2d context unavailable");
-      return false;
-    }
-    // Everything below - not just decodeMap - can throw on an unexpected doc
-    // shape (a missing field the old Jinja page never happened to exercise,
-    // for instance). Catching only decodeMap let those propagate all the way
-    // out to fetchOnce's catch with no trace of where they actually came from.
+    if (!ctx) return false;
     try {
       const decoded = api.decodeMap(doc);
       const scale = (doc as any).suggested_scale || 5;
       const width = decoded.cols * scale;
       const height = decoded.rows * scale;
-      if (canvas.width !== width || canvas.height !== height) {
-        canvas.width = width;
-        canvas.height = height;
-      }
+      if (canvas.width !== width || canvas.height !== height) { canvas.width = width; canvas.height = height; }
       const key = `${(doc as any).map_id}|${(doc as any).cells.join("x")}|${(doc as any).origin.join(",")}`;
-
       if (!baseRef.current || baseKeyRef.current !== key) {
         const base = document.createElement("canvas");
-        base.width = width;
-        base.height = height;
+        base.width = width; base.height = height;
         const bctx = base.getContext("2d");
         if (bctx) {
           api.drawBase(bctx, decoded, { scale, showRoomNames: true });
-          if (decoded.dock) {
-            api.drawDock(bctx, decoded, { x: decoded.dock[0], y: decoded.dock[1], heading: decoded.dock_angle }, { scale });
-          }
+          if (decoded.dock) api.drawDock(bctx, decoded, { x: decoded.dock[0], y: decoded.dock[1], heading: decoded.dock_angle }, { scale });
         }
-        baseRef.current = base;
-        baseKeyRef.current = key;
+        baseRef.current = base; baseKeyRef.current = key;
       }
-
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       if (baseRef.current) ctx.drawImage(baseRef.current, 0, 0);
       if (decoded.robot) {
-        api.drawVacuum(
-          ctx,
-          decoded,
-          { x: decoded.robot[0], y: decoded.robot[1], heading: decoded.angle },
-          { scale, opacity: 0.9, fov: 70, reach: 900 }
-        );
+        api.drawVacuum(ctx, decoded, { x: decoded.robot[0], y: decoded.robot[1], heading: decoded.angle }, { scale, opacity: 0.9, fov: 70, reach: 900 });
       }
-      // Confirms the canvas actually has real pixel content and a nonzero
-      // on-screen (CSS) size - distinguishes "drew fine but CSS is hiding/
-      // collapsing it" from "nothing was ever drawn".
-      const rect = canvas.getBoundingClientRect();
-      console.log(
-        "[mapContent] drew ok - bitmap", canvas.width, "x", canvas.height,
-        "| on-screen", Math.round(rect.width), "x", Math.round(rect.height),
-        "| stage hidden:", canvas.closest(`.${styles.stage}`)?.hasAttribute("hidden")
-      );
       return true;
     } catch (e) {
-      console.error("[mapContent] renderDoc failed on doc:", doc, e);
-      setMessage(`Could not render the map: ${(e as Error).message || e}`);
+      console.error("[mapContent] live render failed:", e);
+      setLiveError((e as Error).message || "Could not render the map");
       return false;
     }
   }, []);
 
-  // Poll the live map while mounted + a device is selected.
+  // Poll the live current map while the current subtab is shown for a current map.
   useEffect(() => {
-    if (!did) return;
+    if (!did || subtab !== "current" || !isCurrent || !selectedMapId) return;
     let alive = true;
     let timer: ReturnType<typeof setTimeout> | null = null;
-    let stopRetry = false;
-
-    const fetchOnce = async (refresh: boolean): Promise<boolean> => {
-      // returns true if a map was drawn
-      try {
-        const url = `api/maps/${encodeURIComponent(didRef.current)}/current${refresh ? "?refresh=1" : ""}`;
-        const rs = await call<Record<string, any>>(url);
-        if (!alive) return false;
-        if (!rs.ok || !rs.data) {
-          console.warn("[mapContent] map fetch not ok:", rs.status, rs.data);
-          setMessage((rs.data && (rs.data as any).error) || `Map request failed (HTTP ${rs.status})`);
-          return false;
-        }
-        console.log("[mapContent] got map doc, keys:", Object.keys(rs.data), "rendererLoaded:", !!mapApiRef.current);
-        const ok = await renderDoc(rs.data);
-        if (ok) setMessage(null);
-        return ok;
-      } catch (e) {
-        console.error("[mapContent] fetchOnce threw:", e);
-        if (alive) {
-          setMessage((e as Error).message || "Could not load the live map");
-        }
-        return false;
-      }
-    };
-
-    // Tracks "is a map currently drawn on screen" independent of React state:
-    // ticks are chained via setTimeout, so a closure over `mapState` here
-    // would just be whatever it was when THIS effect was created, not the
-    // live value after earlier ticks' setMapState calls. Reset to false
-    // whenever the effect re-runs (new device, manual refresh), which is
-    // exactly when we DO want the loading UI back.
     let hasMap = false;
-
-    const tick = async () => {
-      if (!alive || stopRetry) return;
-      // Only show the loading UI for the initial fetch (or while recovering
-      // from a failed/no-map state) - once a map is up, a routine background
-      // poll should update it in place without hiding it behind a spinner.
-      if (!hasMap) setMapState("loading");
-      const drawn = await fetchOnce(false);
+    setMapState("loading");
+    const tick = async (refresh: boolean) => {
       if (!alive) return;
-      if (drawn) {
-        hasMap = true;
-        setMapState("ok");
-        timer = setTimeout(tick, 3000); // live follow
-      } else if (hasMap) {
-        // A map is already showing - one failed background poll (a transient
-        // blip) shouldn't yank it away. Keep showing the last good map and
-        // just retry; fetchOnce already recorded the error in `message`.
-        timer = setTimeout(tick, 3000);
-      } else {
-        // No map / error: stay in a "no map found - refresh" state but keep a
-        // gentle retry so the map appears when the robot comes back online.
-        setMapState(mapApiRef.current ? "no-map" : "loading");
-        timer = setTimeout(tick, 5000);
+      if (!hasMap) setMapState("loading");
+      try {
+        const url = `api/maps/${encodeURIComponent(did)}/current${refresh ? "?refresh=1" : ""}`;
+        const rs = await call<Record<string, any>>(url);
+        if (!alive) return;
+        if (rs.ok && rs.data) {
+          const ok = await renderLiveDoc(rs.data);
+          if (alive && ok) { hasMap = true; setMapState("ok"); setLiveError(null); timer = setTimeout(() => tick(false), 3000); return; }
+        } else {
+          setLiveError((rs.data as any)?.error || `Map request failed (HTTP ${rs.status})`);
+        }
+      } catch (e) {
+        if (alive) setLiveError((e as Error).message || "Could not load the live map");
+      }
+      if (alive) {
+        if (hasMap) timer = setTimeout(() => tick(false), 3000);
+        else { setMapState(mapApiRef.current ? "no-map" : "loading"); timer = setTimeout(() => tick(false), 5000); }
       }
     };
+    tick(false);
+    return () => { alive = false; if (timer) clearTimeout(timer); };
+  }, [did, subtab, isCurrent, selectedMapId, renderLiveDoc]);
 
-    tick();
-    return () => { alive = false; stopRetry = true; if (timer) clearTimeout(timer); };
-    // refreshKey is intentionally a dep: a manual refresh restarts this effect.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [did, refreshKey, renderDoc]);
+  async function setDefaultThis() {
+    if (!selectedMap) return;
+    await call(`api/maps/${encodeURIComponent(did)}/default`, { method: "PUT", body: JSON.stringify({ map_id: selectedMap.id }) });
+    setMapsData((d) => d ? { ...d, default_map_id: String(selectedMap.id) } : d);
+  }
+  async function clearDefault() {
+    await call(`api/maps/${encodeURIComponent(did)}/default`, { method: "DELETE" });
+    setMapsData((d) => d ? { ...d, default_map_id: null } : d);
+  }
 
-  const handleRefresh = useCallback(() => {
-    setMapState("loading");
-    setMessage(null);
-    setRefreshKey((k) => k + 1);
-  }, []);
+  async function toggleBackup(time: number) {
+    if (selectedMapId == null) return;
+    const key = `${selectedMapId}:${time}`;
+    setExpanded((p) => ({ ...p, [key]: !p[key] }));
+    if (backupDocs[key] || expanded[key]) return;
+    setBackupBusy((b) => ({ ...b, [key]: true }));
+    setBackupErr((e) => { const n = { ...e }; delete n[key]; return n; });
+    try {
+      const rs = await call<Record<string, any>>(`api/maps/${encodeURIComponent(did)}/backup/${selectedMapId}/${time}`);
+      if (rs.ok && rs.data?.grid) setBackupDocs((d) => ({ ...d, [key]: rs.data }));
+      else setBackupErr((p) => ({ ...p, [key]: (rs.data as any)?.error || "Could not decode this backup map" }));
+    } catch (e) {
+      setBackupErr((p) => ({ ...p, [key]: (e as Error).message || "Could not load backup map" }));
+    } finally {
+      setBackupBusy((b) => ({ ...b, [key]: false }));
+    }
+  }
 
-  const showMap = mapState === "ok";
-  const showNoMap = (mapState === "no-map" || mapState === "error") && !devLoading;
-  const isSpinning = mapState === "loading" || devLoading;
+  const showLive = subtab === "current" && isCurrent;
+  const isDefaultFloor = mapsData?.default_map_id != null && String(mapsData.default_map_id) === String(selectedMapId);
 
   return (
     <div className={styles.wrap}>
       <header className={styles.header}>
         <h1 className={styles.h1}>Maps</h1>
-        {devices.length > 0 ? (
+        {devices.length > 0 && (
           <div className={styles.controls}>
-            <Select
-              value={did}
-              onChange={(v) => { setDid(v); setMessage(null); }}
-              options={devices.map((d) => ({ value: d.did, label: d.name || d.did }))}
-            />
-            <Button variant="primary" onClick={handleRefresh} disabled={isSpinning}>
-              {isSpinning ? <Spinner /> : "Refresh map"}
-            </Button>
+            <Select value={did} onChange={(v) => setDid(v)}
+              options={devices.map((d) => ({ value: d.did, label: d.name || d.did }))} />
           </div>
-        ) : null}
+        )}
       </header>
 
-      {/* The canvas is ALWAYS mounted so canvasRef.current is bound and the
-          renderer can draw into it; visibility is toggled by state. If it were
-          mounted only after mapState==='ok', the first draw could never happen
-          (renderDoc needs the canvas, but the canvas only appears after a draw)
-          - a deadlock. Loading/empty messages overlay it. */}
-      <div className={styles.stage} hidden={showMap ? false : true}>
-        <div className={styles.canvasWrap}>
-          <canvas ref={canvasRef} className={styles.canvas} />
-        </div>
-      </div>
+      {mapsError && <StatusMessage tone="err">{mapsError}</StatusMessage>}
 
-      {!showMap && isSpinning ? (
-        <p className={styles.loading}><Spinner /> Loading map…</p>
-      ) : showNoMap ? (
-        <div className={styles.empty}>
-          <p className={styles.err}>
-            {message || "No map found."}
-          </p>
-          <p className={styles.hint}>The map may not have been generated yet, or the robot is offline.</p>
-          <Button variant="primary" onClick={handleRefresh}>
-            Refresh map
-          </Button>
-        </div>
+      {mapsLoading ? (
+        <p className={styles.loading}><Spinner /> Loading maps…</p>
+      ) : mapsData && mapsData.maps.length ? (
+        <>
+          <div className={styles.mapTabs}>
+            {(mapsData.maps || []).map((m) => {
+              const isDef = String(m.id) === String(mapsData.default_map_id);
+              return (
+                <button key={m.id} type="button"
+                  className={m.id === selectedMapId ? `${styles.mapTab} ${styles.mapTabOn}` : styles.mapTab}
+                  onClick={() => { setSelectedMapId(m.id); setSubtab(m.is_current ? "current" : "backups"); resetBase(); setMapState("loading"); }}>
+                  Map {m.id}
+                  {m.is_current ? <span className={styles.badge}>current</span> : null}
+                  {isDef ? <span className={`${styles.badge} ${styles.badgeDefault}`}>default</span> : null}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className={styles.subtabs}>
+            <button type="button" className={subtab === "current" ? styles.subtabOn : undefined} onClick={() => { setSubtab("current"); resetBase(); }}>Current map</button>
+            <button type="button" className={subtab === "backups" ? styles.subtabOn : undefined} onClick={() => setSubtab("backups")}>Backups</button>
+          </div>
+
+          <div className={styles.mapHead}>
+            <span className={styles.mapTitle}>
+              Map {selectedMap?.id}
+              {isCurrent ? " · current" : ""}
+              {isDefaultFloor ? " · default" : ""}
+            </span>
+            <div className={styles.defaultCtl}>
+              {isDefaultFloor ? (
+                <Button variant="ghost" onClick={() => void clearDefault()}>Clear default floor</Button>
+              ) : (
+                <Button variant="primary" onClick={() => void setDefaultThis()}>Set as default floor</Button>
+              )}
+            </div>
+          </div>
+
+          {subtab === "current" ? (
+            isCurrent ? (
+              <>
+                <div className={styles.stage} hidden={mapState !== "ok"}>
+                  <div className={styles.canvasWrap}><canvas ref={canvasRef} className={styles.canvas} /></div>
+                </div>
+                {mapState !== "ok" && (
+                  <div className={styles.empty}>
+                    {mapState === "loading" ? <p className={styles.loading}><Spinner /> Loading map…</p>
+                      : mapState === "error" ? <p className={styles.err}>{liveError}</p>
+                      : <p className={styles.err}>{liveError || "No map found."}</p>}
+                    <Button onClick={() => { resetBase(); setMapState("loading"); }}>Refresh map</Button>
+                  </div>
+                )}
+              </>
+            ) : (
+              <p className={styles.hint}>
+                This isn&apos;t the vacuum&apos;s active map right now, so there is no live view for it — only its
+                backup history, under the Backups tab.
+              </p>
+            )
+          ) : (
+            <BackupList
+              mapId={selectedMap?.id}
+              backups={selectedMap?.backups || []}
+              expanded={expanded}
+              busy={backupBusy}
+              docs={backupDocs}
+              errors={backupErr}
+              showDev={backupShowDev}
+              api={mapApiRef.current}
+              onToggle={toggleBackup}
+              onShowDev={setBackupShowDev}
+            />
+          )}
+        </>
+      ) : mapsData ? (
+        <p className={styles.hint}>No maps found for this device yet — the account has no backup history to list.</p>
       ) : null}
     </div>
+  );
+}
+
+function BackupList(props: {
+  mapId: number | undefined;
+  backups: MapBackup[];
+  expanded: Record<string, boolean>;
+  busy: Record<string, boolean>;
+  docs: Record<string, Record<string, any>>;
+  errors: Record<string, string>;
+  showDev: Record<string, boolean>;
+  api: MapApi | null;
+  onToggle: (time: number) => void;
+  onShowDev: (cb: (prev: Record<string, boolean>) => Record<string, boolean>) => void;
+}) {
+  const { mapId, backups, expanded, busy, docs, errors, showDev, api, onToggle, onShowDev } = props;
+  if (!backups.length) return <p className={styles.hint}>No backup history for this map yet.</p>;
+  return (
+    <div>
+      <table className={styles.backupTable}>
+        <thead><tr><th style={{ width: "60%" }}>Saved</th><th>First of its set</th></tr></thead>
+        <tbody>
+          {backups.map((b) => {
+            const key = mapId != null ? `${mapId}:${b.time}` : `${b.time}`;
+            const open = !!expanded[key];
+            return (
+              <BackupRow key={key} backup={b} open={open}
+                doc={docs[key]} busy={!!busy[key]} err={errors[key]}
+                api={api} showDev={!!showDev[key]}
+                onToggle={() => onToggle(b.time)}
+                onShowDev={(on) => onShowDev((p) => ({ ...p, [key]: on }))}
+              />
+            );
+          })}
+        </tbody>
+      </table>
+      <p className={styles.hint} style={{ marginTop: 12 }}>
+        Click a saved time to expand and render that backup map. Restoring a backup isn&apos;t supported yet, but every
+        backup&apos;s map is decoded and drawn here with the same renderer the live map uses.
+      </p>
+    </div>
+  );
+}
+
+function BackupRow(props: {
+  backup: MapBackup;
+  open: boolean;
+  doc: Record<string, any> | undefined;
+  busy: boolean;
+  err: string | undefined;
+  api: MapApi | null;
+  showDev: boolean;
+  onToggle: () => void;
+  onShowDev: (on: boolean) => void;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const { doc, api, showDev, open } = props;
+  useEffect(() => {
+    if (open && doc && api && canvasRef.current) drawDoc(api, canvasRef.current, doc, showDev);
+  }, [open, doc, api, showDev]);
+  return (
+    <>
+      <tr className={styles.backupRow} onClick={props.onToggle}>
+        <td>{new Date(props.backup.time * 1000).toLocaleString()}</td>
+        <td>{props.backup.first ? "Yes" : ""}</td>
+      </tr>
+      {props.open && (
+        <tr className={styles.backupPreview}><td colSpan={2}>
+          <div className={styles.backupBody}>
+            {props.busy ? <p className={styles.hint}><Spinner /> Loading backup…</p>
+              : props.err ? <p className={styles.err}>{props.err}</p>
+              : props.doc && props.api ? (
+                <>
+                  <label className={styles.backupDevicesToggle}>
+                    <input type="checkbox" checked={props.showDev} onChange={(e) => props.onShowDev(e.target.checked)} /> Show vacuum &amp; dock
+                  </label>
+                  <div className={styles.backupCanvas}><canvas ref={canvasRef} className={styles.canvas} /></div>
+                </>
+              ) : <p className={styles.hint}>Loading…</p>}
+          </div>
+        </td></tr>
+      )}
+    </>
   );
 }

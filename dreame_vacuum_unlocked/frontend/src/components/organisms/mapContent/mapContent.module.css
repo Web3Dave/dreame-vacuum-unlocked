@@ -75,3 +75,149 @@
   max-width: 100%;
   height: auto;
 }
+
+/* floor-plan tabs */
+.mapTabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.mapTab {
+  padding: 8px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mapTabOn {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  font-weight: 600;
+}
+
+.badge {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, #03a9f4 18%, transparent);
+  color: #03a9f4;
+}
+
+.badgeDefault {
+  background: color-mix(in srgb, var(--ok) 15%, transparent);
+  color: var(--ok);
+}
+
+/* current/backups subtabs */
+.subtabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.subtabs button {
+  background: none;
+  border: none;
+  padding: 8px 14px;
+  cursor: pointer;
+  font: inherit;
+  color: var(--muted);
+  border-bottom: 2px solid transparent;
+}
+
+.subtabs .subtabOn {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+
+/* map title + default control */
+.mapHead {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.mapTitle {
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.defaultCtl {
+  margin-left: auto;
+}
+
+.stage {
+  display: block;
+}
+
+/* backup table */
+.backupTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.backupTable th,
+.backupTable td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.backupTable th {
+  color: var(--muted);
+  font-weight: 500;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.backupRow {
+  cursor: pointer;
+}
+
+.backupRow:hover {
+  background: rgba(128, 128, 128, 0.08);
+}
+
+.backupPreview td {
+  padding: 14px;
+}
+
+.backupBody {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.backupDevicesToggle {
+  font-size: 13px;
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+}
+
+.backupCanvas {
+  display: flex;
+  justify-content: center;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: auto;
+  max-height: calc(100vh - 260px);
+}
