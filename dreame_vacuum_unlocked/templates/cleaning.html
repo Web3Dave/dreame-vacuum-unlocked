@@ -200,7 +200,7 @@
 
     async function loadModule() {
       if (!mapModule) {
-        mapModule = await import("/dreame_vacuum_unlocked_integration/map.js?v=10");
+        mapModule = await import("/dreame_vacuum_unlocked_integration/map.js?v=12");
         await mapModule.loadSprites();
       }
       return mapModule;

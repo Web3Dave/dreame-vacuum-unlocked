@@ -11,7 +11,7 @@ import styles from "./mapContent.module.css";
 // The map renderer is owned by the **integration**, served by HA at
 // /dreame_vacuum_unlocked_integration/map.js. We dynamically import it and
 // drive its exports, exactly like the legacy Jinja pages.
-const MAP_JS = "/dreame_vacuum_unlocked_integration/map.js?v=11";
+const MAP_JS = "/dreame_vacuum_unlocked_integration/map.js?v=12";
 
 interface MapApi {
   decodeMap(doc: unknown): any;

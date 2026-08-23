@@ -8,7 +8,7 @@ import StatusMessage from "../../../components/molecules/statusMessage/statusMes
 import { call } from "../../../lib/api";
 import styles from "./cleaningContent.module.css";
 
-const MAP_JS = "/dreame_vacuum_unlocked_integration/map.js?v=11";
+const MAP_JS = "/dreame_vacuum_unlocked_integration/map.js?v=12";
 
 interface CleanDevice {
   did: string;
