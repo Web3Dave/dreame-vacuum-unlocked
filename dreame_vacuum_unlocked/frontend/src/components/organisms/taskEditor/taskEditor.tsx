@@ -37,6 +37,22 @@ function FieldInput({ field, value, stepType, audioFiles, onChange }: {
       </label>
     );
   }
+  if (stepType === "clean_rooms" && field.name === "cleaning_type") {
+    const current = value ? String(value) : "auto";
+    const options = [
+      { value: "auto", label: "Default (vacuum & mop)" },
+      { value: "vacuum_and_mop", label: "Vacuum & mop" },
+      { value: "vacuum_only", label: "Vacuum" },
+      { value: "mop_only", label: "Mop" },
+      { value: "vacuum_then_mop", label: "Vacuum then mop" },
+    ];
+    return (
+      <label className={styles.fieldRow}>
+        <span className={styles.fieldLabel}>{label}</span>
+        <Select value={current} onChange={(v) => onChange(v === "auto" ? "auto" : v)} options={options} />
+      </label>
+    );
+  }
   const type = field.name === "filename" || field.type === "str" ? "text" : "number";
   return (
     <label className={styles.fieldRow}>
@@ -406,9 +422,11 @@ function RoomsEditor({ did, rooms, onRooms }: { did: string; rooms: number[]; on
         <div className={styles.chips}>
           {all.map((r) => {
             const on = rooms.includes(r);
+            const order = on ? rooms.indexOf(r) + 1 : null;
             return (
               <button key={r} type="button" className={on ? `${styles.chip} ${styles.chipSel}` : styles.chip}
                 onClick={() => onRooms(on ? rooms.filter((x) => x !== r) : [...rooms, r])}>
+                {order != null && <span className={styles.chipOrder}>{order}</span>}
                 {allNames ? allNames[String(r)] : `Room ${r}`}
               </button>
             );

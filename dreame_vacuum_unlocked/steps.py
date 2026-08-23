@@ -84,6 +84,9 @@ STEP_TYPES = {
             ("rooms", "list_int", True, None,
              "Room ids to clean, in order: first id is cleaned first"),
             ("times", "int", False, 1, "How many times to clean each room"),
+            ("cleaning_type", "str", False, "auto",
+             "Vacuum/mop combo: auto, vacuum_and_mop, vacuum_only, mop_only, "
+             "or vacuum_then_mop"),
         ],
         "service": ("dreame_vacuum_unlocked_integration", "clean_rooms"),
     },

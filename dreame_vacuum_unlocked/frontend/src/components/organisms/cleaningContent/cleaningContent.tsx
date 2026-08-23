@@ -50,6 +50,7 @@ export default function CleaningContent() {
   const [mode, setMode] = useState<"all" | "room">("all");
   const [roomNames, setRoomNames] = useState<Record<string, string>>({});
   const [selectedRooms, setSelectedRooms] = useState<number[]>([]);
+  const [cleaningType, setCleaningType] = useState("auto");
   const [mapError, setMapError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -149,7 +150,7 @@ export default function CleaningContent() {
     if (isCleaning(device) || isPaused(device)) {
       await callService("pause"); setStatus("Paused");
     } else if (mode === "room" && selectedRooms.length) {
-      await callService("clean_rooms", { rooms: selectedRooms }, "dreame_vacuum_unlocked_integration");
+      await callService("clean_rooms", { rooms: selectedRooms, cleaning_type: cleaningType }, "dreame_vacuum_unlocked_integration");
       setStatus("Cleaning rooms");
     } else {
       await callService("start"); setStatus("Cleaning (all)");
@@ -185,13 +186,15 @@ export default function CleaningContent() {
         <div className={styles.roomPane}>
           <div className={styles.roomList}>
             {Object.entries(roomNames).map(([id, name]) => {
-              const on = selectedRooms.includes(parseInt(id, 10));
+              const n = parseInt(id, 10);
+              const on = selectedRooms.includes(n);
+              const order = on ? selectedRooms.indexOf(n) + 1 : null;
               return (
                 <button key={id} className={on ? `${styles.roomChip} ${styles.roomChipOn}` : styles.roomChip}
                   onClick={() => {
-                    const n = parseInt(id, 10);
                     setSelectedRooms((p) => on ? p.filter((x) => x !== n) : [...p, n]);
                   }}>
+                  {order != null && <span className={styles.roomChipOrder}>{order}</span>}
                   {name || id}
                 </button>
               );
@@ -199,6 +202,17 @@ export default function CleaningContent() {
             {!Object.keys(roomNames).length && <p className={styles.hint}>No room data yet — refresh the map.</p>}
           </div>
           <p className={styles.hint}>{selectedRooms.length ? `Order: ${selectedRooms.join(" → ")}` : "Pick the rooms to clean, in order."}</p>
+          <label className={styles.typeRow}>
+            <span className={styles.typeLabel}>Cleaning type</span>
+            <Select value={cleaningType} onChange={(v) => setCleaningType(v)}
+              options={[
+                { value: "auto", label: "Default (vacuum & mop)" },
+                { value: "vacuum_and_mop", label: "Vacuum & mop" },
+                { value: "vacuum_only", label: "Vacuum" },
+                { value: "mop_only", label: "Mop" },
+                { value: "vacuum_then_mop", label: "Vacuum then mop" },
+              ]} />
+          </label>
         </div>
       )}
 

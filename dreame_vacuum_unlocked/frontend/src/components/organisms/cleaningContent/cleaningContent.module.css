@@ -77,6 +77,9 @@
 }
 
 .roomChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   padding: 8px 14px;
   border-radius: 999px;
   font-size: 13px;
@@ -90,6 +93,33 @@
 .roomChipOn {
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 15%, transparent);
+}
+
+.roomChipOrder {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  background: var(--accent);
+}
+
+.typeRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.typeLabel {
+  font-size: 13px;
+  color: var(--muted);
+  white-space: nowrap;
 }
 
 .hint {
