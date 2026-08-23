@@ -173,7 +173,9 @@
   gap: 12px;
   overflow-x: auto;
   overflow-y: hidden;
-  -webkit-overflow-scrolling: touch;
+  /* NOTE: deliberately NO -webkit-overflow-scrolling:touch here. On iOS Safari
+     that property can force a continuously-invalidated scrolling layer once
+     images inside the row resolve, which contributes to the mobile hang. */
   scrollbar-width: none;
   padding-bottom: 4px;
 }
@@ -220,11 +222,18 @@
 }
 
 .tagThumb {
+  /* FIXED height (no aspect-ratio / intrinsic re-resolution). Safari/mobile
+     loops layout forever when an image's aspect-ratio is resolved against an
+     auto-fit grid or an overflow-x scroll container; a fixed box breaks the
+     cycle. */
   width: 100%;
-  aspect-ratio: 4 / 3;
+  height: 108px;
   object-fit: cover;
   border-radius: 6px;
   background: #111;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .tagFoot {
@@ -261,8 +270,23 @@
 
 .shotsGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  /* FIXED columns - not auto-fill/auto-fit. auto-fit with image children is the
+     Safari/mobile aspect-ratio layout-loop: the browser re-flows columns as each
+     image resolves and can loop. Fixed 2 columns on narrow screens, 3 on wide. */
+  grid-template-columns: repeat(2, 1fr);
   gap: 10px;
+}
+
+@media (min-width: 640px) {
+  .shotsGrid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (min-width: 900px) {
+  .shotsGrid {
+    grid-template-columns: repeat(4, 1fr);
+  }
 }
 
 .moreBar {

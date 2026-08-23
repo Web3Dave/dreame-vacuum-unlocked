@@ -7,7 +7,12 @@ import Modal from "../../../components/atoms/modal/modal";
 import { call, readInlinedData, apiUrl } from "../../../lib/api";
 import type { Classifier, SnapshotSummary, Tag, TagsOverviewPayload } from "../../../lib/types";
 import SnapshotCard from "./snapshotCard/snapshotCard";
+import { startStallDetector, logMarker } from "../../../lib/debug";
 import styles from "./tagsContent.module.css";
+
+function isVideoName(filename: string): boolean {
+  return /\.(mp4|mkv|webm)$/i.test(filename);
+}
 
 export default function TagsContent() {
   const [tags, setTags] = useState<Tag[]>([]);
@@ -21,6 +26,7 @@ export default function TagsContent() {
   const PAGE = 40;
 
   async function openDetail(tag: Tag) {
+    logMarker("tags", `open detail "${tag.name}" (${tag.count ?? "?"} snaps)`);
     setDetail(tag);
     setDetailSnaps([]);
     setDetailTotal(tag.count ?? 0);
@@ -76,6 +82,10 @@ export default function TagsContent() {
     const boot = readInlinedData<TagsOverviewPayload>();
     if (boot && boot.tags) { setTags(boot.tags); setLoading(false); }
     else load();
+    // DEBUG: detect main-thread stalls (layout/render loop) on mobile Safari.
+    logMarker("tags", `mounted, ${boot?.tags?.length ?? "?"} tags`);
+    const stop = startStallDetector("tags");
+    return () => stop();
   }, []);
 
   async function createTag() {
@@ -204,7 +214,16 @@ export default function TagsContent() {
                 <span className={styles.tagName}>{t.name}</span>
                 <span className={styles.tagCount}>{t.count ?? 0}</span>
                 {t.snapshots && t.snapshots[0] ? (
-                  <img className={styles.tagThumb} src={`${apiUrl(`snapshot/${encodeURIComponent(t.id)}/${encodeURIComponent(t.snapshots[0].filename)}`)}${t.snapshots[0].kind === "video" || /\.(mp4|mkv|webm)$/i.test(t.snapshots[0].filename) ? "" : "?w=320"}`} alt={t.name} loading="lazy" decoding="async" />
+                  isVideoName(t.snapshots[0].filename) ? (
+                    <span className={styles.tagThumb}>
+                      <svg viewBox="0 0 24 24" width="32" height="32" aria-hidden="true" style={{ opacity: 0.7 }}>
+                        <circle cx="12" cy="12" r="10" fill="rgba(255,255,255,.12)" />
+                        <path d="M10 9l5 3-5 3z" fill="#fff" />
+                      </svg>
+                    </span>
+                  ) : (
+                    <img className={styles.tagThumb} src={`${apiUrl(`snapshot/${encodeURIComponent(t.id)}/${encodeURIComponent(t.snapshots[0].filename)}`)}?w=320`} alt={t.name} loading="lazy" decoding="async" />
+                  )
                 ) : null}
               </button>
               <div className={styles.tagFoot}>
